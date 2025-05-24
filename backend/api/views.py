@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from django.http import HttpResponseServerError
 from django.shortcuts import get_object_or_404
@@ -20,7 +20,6 @@ from .models import (
     Portfolio,
     PortfolioTicker,
     PortfolioTransaction,
-    PortfolioDividend,
     PortfolioDepositOfMoney
 )
 
@@ -207,8 +206,11 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             amount = Decimal(data["amount"])
             fees = Decimal(data["fees"])
             stock_price = Decimal(data["stock_price"])
-            quantity = round(amount / stock_price, 6)
-        except (ValueError, TypeError, Decimal.InvalidOperation):
+            if data["operation"] in ["buy", "sell"]:
+                quantity = round(amount / stock_price, 6)
+            else:
+                quantity = data["quantity"]
+        except (ValueError, TypeError, InvalidOperation):
             return Response({"detail": "Invalid numeric value."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Vérification du ticker
@@ -370,8 +372,8 @@ class ExcelTransactionUploadView(APIView):
             return Response({"detail": f"Erreur de lecture du fichier : {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
         expected_columns = [
-            'Ticker', 'Opération', 'Date de la transaction',
-            'Montant de la transaction', "Prix de l'action lors de la transaction", 'Frais'
+            'Ticker', 'Type', 'Date',
+            'Montant', "Prix de l'action lors de la transaction", 'Quantité', 'Frais'
         ]
         if not all(col in data.columns for col in expected_columns):
             return Response({
@@ -380,14 +382,15 @@ class ExcelTransactionUploadView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # 🧠 Combine les lignes similaires
-        data['Date de la transaction'] = pd.to_datetime(data['Date de la transaction']).dt.date
+        data['Date'] = pd.to_datetime(data['Date']).dt.date
         grouped = data.groupby([
             'Ticker', 
-            'Opération', 
-            'Date de la transaction', 
-            "Prix de l'action lors de la transaction"
+            'Type', 
+            'Date', 
+            "Prix de l'action lors de la transaction",
         ], as_index=False).agg({
-            'Montant de la transaction': 'sum',
+            'Montant': 'sum',
+            'Quantité': 'sum',
             'Frais': 'sum'
         })
 
@@ -404,13 +407,19 @@ class ExcelTransactionUploadView(APIView):
                 html_error = f"<h2>Erreur ligne {index + 2}</h2><br><p>Ticker {row['Ticker']} introuvable dans votre portefeuille.</p>"
                 return HttpResponseServerError(html_error)
 
-            operation = row['Opération']
-            date = row['Date de la transaction']
+            operation = row['Type']
+            date = row['Date']
             try:
-                amount = Decimal(abs(float(row['Montant de la transaction'])))
+                amount = Decimal(abs(float(row['Montant'])))
                 fees = Decimal(abs(float(row['Frais'])))
                 stock_price = Decimal(float(row["Prix de l'action lors de la transaction"]))
-                quantity = round(amount / stock_price, 6)
+                if operation in ["buy", "sell"]:
+                    try:
+                        quantity = round((amount - fees) / stock_price, 6)
+                    except ZeroDivisionError:
+                        return Response({"detail": f"Erreur division par zéro ligne {index + 2} (prix d'action à 0)."}, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    quantity = Decimal(abs(float(row['Quantité'])))
             except Exception as e:
                 return Response({"detail": f"Erreur de conversion ligne {index + 2}: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -426,7 +435,10 @@ class ExcelTransactionUploadView(APIView):
                 # Préparer la MAJ
                 new_amount = existing_tx.amount + amount
                 new_fees = existing_tx.fees + fees
-                new_quantity = round(new_amount / stock_price, 6)
+                if operation in ["buy", "sell"]:
+                    new_quantity = round(new_amount / stock_price, 6)
+                else:
+                    new_quantity = 0
 
                 # Pas besoin de sérialiseur, juste validation manuelle si tu veux
                 to_update.append((existing_tx, new_amount, new_fees, new_quantity))
@@ -436,9 +448,9 @@ class ExcelTransactionUploadView(APIView):
                     "portfolio_ticker": portfolio_ticker.pk,
                     "operation": operation,
                     "date": date,
-                    "amount": abs(float(row['Montant de la transaction'])),
-                    "stock_price": round(float(row["Prix de l'action lors de la transaction"])),
-                    "quantity": round(abs(float(row['Montant de la transaction'])) / float(row["Prix de l'action lors de la transaction"]), 6),
+                    "amount": abs(float(row['Montant'])),
+                    "stock_price": round(float(row["Prix de l'action lors de la transaction"]), 2),
+                    "quantity": float(quantity),
                     "fees": abs(float(row['Frais'])),
                     "notes": ""
                 }

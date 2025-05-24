@@ -25,41 +25,36 @@ const SettingsPage = () => <div>Paramètres de l'application</div>;
 
 function App() {
   return (
-    // <PortfolioProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Routes publiques */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/logout" element={<Logout />} />
-          <Route path="/register" element={<RegisterAndLogout />} />
-          <Route path="*" element={<NotFound />} />
+    <BrowserRouter>
+      <Routes>
+        {/* Routes publiques */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/logout" element={<Logout />} />
+        <Route path="/register" element={<RegisterAndLogout />} />
+        <Route path="*" element={<NotFound />} />
 
-          {/* Routes protégées sous layout */}
+        {/* Routes protégées sous layout */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <LayoutWithSidebar />
+            </ProtectedRoute>
+          }
+        >
           <Route
-            element={
-              <ProtectedRoute>
-                <LayoutWithSidebar />
-              </ProtectedRoute>
-            }
-          >
-            <Route
-              path="/portfolio/dashboard"
-              element={<PortfoliosDashboard />}
-            />
-            <Route
-              path="/portfolio/transactions"
-              element={<TransactionsPage />}
-            />
-            <Route
-              path="/portfolio/performance"
-              element={<PerformancePage />}
-            />
-            <Route path="/portfolio/dividends" element={<DividendsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    // </PortfolioProvider>
+            path="/portfolio/dashboard"
+            element={<PortfoliosDashboard />}
+          />
+          <Route
+            path="/portfolio/transactions"
+            element={<TransactionsPage />}
+          />
+          <Route path="/portfolio/performance" element={<PerformancePage />} />
+          <Route path="/portfolio/dividends" element={<DividendsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 

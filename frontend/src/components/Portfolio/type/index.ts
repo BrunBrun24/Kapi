@@ -12,19 +12,13 @@ export interface Transaction {
   portfolioId: string;
   ticker: string;
   name: string;
-  operation: "buy" | "sell";
+  operation: "buy" | "sell" | "dividend";
   stock_price: number;
   quantity: number;
   amount: number;
   date: string;
   fees?: number;
   notes?: string;
-}
-
-export interface PortfolioState {
-  portfolios: Portfolio[];
-  selectedPortfolioId: string | null;
-  transactions: Transaction[];
 }
 
 export interface Ticker {

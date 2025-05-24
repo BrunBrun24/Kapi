@@ -115,11 +115,12 @@ class PortfolioTransaction(models.Model):
     OPERATION_CHOICES = [
         ('buy', 'Achat'),
         ('sell', 'Vente'),
+        ('dividend', 'Dividende'),
     ]
 
     portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     portfolio_ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE)
-    operation = models.CharField(max_length=4, choices=OPERATION_CHOICES, blank=False, null=False)
+    operation = models.CharField(max_length=8, choices=OPERATION_CHOICES, blank=False, null=False)
     stock_price = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
     date = models.DateField(blank=False, null=False)
     amount = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
@@ -133,15 +134,6 @@ class PortfolioTransaction(models.Model):
     @classmethod
     def get_user_portfolios(cls, user):
         return cls.objects.filter(portfolio_user=user)
-
-class PortfolioDividend(models.Model):
-    portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    portfolio_ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE)
-    date = models.DateField(blank=False, null=False)
-    amount = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
-
-    def __str__(self):
-        return f"{self.portfolio_ticker.ticker} - {self.date}"
 
 class PortfolioDepositOfMoney(models.Model):
     portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

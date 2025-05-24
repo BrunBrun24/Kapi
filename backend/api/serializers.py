@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     CustomUser, Company, StockPrice, UserPreference,
     Portfolio, PortfolioTicker, PortfolioTransaction,
-    PortfolioDividend, PortfolioDepositOfMoney
+    PortfolioDepositOfMoney
 )
 
 

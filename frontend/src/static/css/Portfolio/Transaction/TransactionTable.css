@@ -89,6 +89,11 @@ th:first-child .sort_button {
   color: #991b1b;
 }
 
+.dividend {
+  background-color: #dbeafe;
+  color: #1e3a8a;
+}
+
 .actions {
   display: flex;
   justify-content: center;

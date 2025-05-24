@@ -89,7 +89,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
       portfolio_ticker: formData.ticker.toUpperCase(),
       operation: formData.operation,
       stock_price: formData.stock_price,
-      quantity: formData.amount / formData.stock_price,
+      quantity: formData.quantity,
       amount: formData.amount,
       date: formData.date,
       fees: formData.fees,
@@ -191,6 +191,34 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
           {/* champ recherche + date */}
           <div className="form-grid-2">
             <div>
+              <label className="form-label">Type de transaction</label>
+              <select
+                name="operation"
+                value={formData.operation}
+                onChange={handleChange}
+                className="form-input"
+              >
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+                <option value="dividend">Dividend</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Date</label>
+              <input
+                type="date"
+                name="date"
+                value={formData.date}
+                onChange={handleChange}
+                className="form-input"
+                required
+              />
+            </div>
+          </div>
+
+          {/* opération + montant */}
+          <div className="form-grid-2">
+            <div>
               <label className="form-label">
                 Rechercher un Ticker ou une Company
               </label>
@@ -218,33 +246,6 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
               </div>
             </div>
             <div>
-              <label className="form-label">Date</label>
-              <input
-                type="date"
-                name="date"
-                value={formData.date}
-                onChange={handleChange}
-                className="form-input"
-                required
-              />
-            </div>
-          </div>
-
-          {/* opération + montant */}
-          <div className="form-grid-2">
-            <div>
-              <label className="form-label">Type de transaction</label>
-              <select
-                name="operation"
-                value={formData.operation}
-                onChange={handleChange}
-                className="form-input"
-              >
-                <option value="buy">Buy</option>
-                <option value="sell">Sell</option>
-              </select>
-            </div>
-            <div>
               <label className="form-label">Montant</label>
               <input
                 type="number"
@@ -259,21 +260,36 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
             </div>
           </div>
 
-          {/* prix + frais */}
+          {/* (prix ou quantité) + frais */}
           <div className="form-grid-2">
-            <div>
-              <label className="form-label">Prix de l'action</label>
-              <input
-                type="number"
-                name="stock_price"
-                value={formData.stock_price}
-                onChange={handleChange}
-                min="0.01"
-                step="0.01"
-                className="form-input"
-                required
-              />
-            </div>
+            {formData.operation !== "dividend" ? (
+              <div>
+                <label className="form-label">Prix de l'action</label>
+                <input
+                  type="number"
+                  name="stock_price"
+                  value={formData.stock_price}
+                  onChange={handleChange}
+                  min="0.01"
+                  step="0.01"
+                  className="form-input"
+                  required
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="form-label">Quantité</label>
+                <input
+                  type="number"
+                  name="quantity"
+                  value={formData.quantity}
+                  onChange={handleChange}
+                  min="0.00001"
+                  step="0.000001"
+                  className="form-input"
+                />
+              </div>
+            )}
             <div>
               <label className="form-label">Frais/Commission</label>
               <input

@@ -361,22 +361,35 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                   <td>
                     <span
                       className={`tag ${
-                        transaction.operation === "buy" ? "buy" : "sell"
+                        transaction.operation === "buy"
+                          ? "buy"
+                          : transaction.operation === "sell"
+                          ? "sell"
+                          : "dividend"
                       }`}
                     >
-                      {transaction.operation === "buy" ? "Buy" : "Sell"}
+                      {transaction.operation === "buy"
+                        ? "Buy"
+                        : transaction.operation === "sell"
+                        ? "Sell"
+                        : "Dividend"}
                     </span>
                   </td>
                   <td className="numeric">{transaction.quantity}</td>
                   <td className="numeric">
-                    {transaction.amount}
-                    {""}
-                    {currencySymbols[transaction.ticker] || ""}
+                    {transaction.amount !== 0 && transaction.amount != null
+                      ? `${transaction.amount} ${
+                          currencySymbols[transaction.ticker] || ""
+                        }`
+                      : ""}
                   </td>
                   <td className="numeric">
-                    {transaction.stock_price}
-                    {""}
-                    {currencySymbols[transaction.ticker] || ""}
+                    {transaction.stock_price !== 0 &&
+                    transaction.stock_price != null
+                      ? `${transaction.stock_price} ${
+                          currencySymbols[transaction.ticker] || ""
+                        }`
+                      : ""}
                   </td>
                   <td className="numeric">
                     {transaction.fees !== 0 &&
