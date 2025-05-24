@@ -1,0 +1,91 @@
+.filter-panel {
+  position: absolute;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 0;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  width: 250px;
+  top: 40px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+}
+
+.filter-panel .filter-content {
+  padding: 15px;
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+.filter-values {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #ddd;
+  padding: 10px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  margin-top: 10px;
+}
+
+.filter-values label {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px; /* espace entre la checkbox et le texte */
+}
+
+.filter-values label:first-of-type {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.filter-values label input[type="checkbox"] {
+  width: 14px;   /* taille réduite */
+  height: 14px;
+  accent-color: #2563eb; /* couleur personnalisée si supporté */
+}
+
+
+.sort-buttons {
+  display: flex;
+  flex-direction: column;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid #ccc;
+}
+
+.sort-buttons button {
+  padding: 7px;
+  border: none;
+  cursor: pointer;
+  background-color: #f1f5f9;
+  color: #1f2937;
+  transition: background-color 0.2s;
+  font-size: 11px;
+}
+
+.sort-buttons button:not(:last-child) {
+  border-bottom: 1px solid #d1d5db;
+}
+
+.sort-buttons button:hover {
+  background-color: #e5e7eb;
+}
+
+.sort-buttons .active-sort-button {
+  background-color: #2563eb;
+  color: white;
+  font-weight: 600;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 15px;
+  border-top: 1px solid #eee;
+  background-color: #f1f1f1;
+}

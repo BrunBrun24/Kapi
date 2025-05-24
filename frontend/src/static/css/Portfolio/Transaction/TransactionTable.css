@@ -1,0 +1,113 @@
+.heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.research-bar {
+  display: flex;
+  padding: 0.5rem;
+}
+
+.placeholder {
+  text-align: center;
+  color: #6b7280;
+  padding: 2rem 0;
+}
+
+.table_wrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  font-size: 0.875rem;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem 1rem; /* Espacement plus grand pour mieux séparer */
+  text-align: center;
+}
+
+.header_row {
+  position: sticky;
+  top: 0;
+  z-index: 2; /* Assure que ça passe au-dessus des lignes */
+  background-color: #f3f4f6; /* Fond plus clair pour les en-têtes */
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.body_row {
+  border-bottom: 1px solid #e5e7eb;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.body_row:hover {
+  background-color: #f9fafb;
+}
+
+.sort_button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  color: #374151;
+  background: none;
+  border: none;
+  text-align: center;
+}
+
+th:first-child .sort_button {
+  justify-content: flex-start; /* aligne à gauche uniquement pour le premier */
+}
+
+.ticker,
+.numeric {
+  font-weight: 500;
+  font-weight: 500;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 9999px;
+}
+
+.buy {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.sell {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.edit_button,
+.delete_button {
+  color: #9ca3af;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.edit_button:hover {
+  color: #2563eb;
+}
+
+.delete_button:hover {
+  color: #dc2626;
+}
