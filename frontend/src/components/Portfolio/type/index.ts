@@ -12,13 +12,19 @@ export interface Transaction {
   portfolioId: string;
   ticker: string;
   name: string;
-  operation: "buy" | "sell" | "dividend";
+  operation:
+    | "buy"
+    | "sell"
+    | "dividend"
+    | "interest"
+    | "deposit"
+    | "withdrawal";
   stock_price: number;
   quantity: number;
   amount: number;
   date: string;
-  fees?: number;
-  notes?: string;
+  fees: number;
+  currency: string;
 }
 
 export interface Ticker {
@@ -36,8 +42,4 @@ export interface TickerNotInPortfolio {
 export interface Currency {
   code: string;
   label: string;
-}
-
-export interface PortfolioIdProps {
-  selectedPortfolioId: string | null;
 }

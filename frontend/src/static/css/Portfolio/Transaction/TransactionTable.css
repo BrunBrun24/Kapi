@@ -61,14 +61,29 @@
   text-align: center;
 }
 
-th:first-child .sort_button {
-  justify-content: flex-start; /* aligne à gauche uniquement pour le premier */
+th:nth-child(1) .sort_button,
+th:nth-child(2) .sort_button {
+  justify-content: flex-start;
+}
+
+tbody td:nth-child(1) {
+  text-align: left;
 }
 
 .ticker,
 .numeric {
   font-weight: 500;
   font-weight: 500;
+}
+
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tab-ticker-logo {
+  width: 2rem;
 }
 
 .tag {
@@ -79,19 +94,10 @@ th:first-child .sort_button {
   border-radius: 9999px;
 }
 
-.buy {
-  background-color: #d1fae5;
-  color: #065f46;
-}
-
-.sell {
-  background-color: #fee2e2;
-  color: #991b1b;
-}
-
-.dividend {
-  background-color: #dbeafe;
-  color: #1e3a8a;
+.type {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .actions {
@@ -113,6 +119,11 @@ th:first-child .sort_button {
   color: #2563eb;
 }
 
+.negatif,
 .delete_button:hover {
   color: #dc2626;
+}
+
+.positive {
+  color: #26dc78;
 }

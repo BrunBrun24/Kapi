@@ -1,8 +1,7 @@
 from rest_framework import serializers
 from .models import (
-    CustomUser, Company, StockPrice, UserPreference,
-    Portfolio, PortfolioTicker, PortfolioTransaction,
-    PortfolioDepositOfMoney
+    CURRENCY_CHOICES, CustomUser, Company, StockPrice, UserPreference,
+    Portfolio, PortfolioTicker, PortfolioTransaction
 )
 
 
@@ -62,13 +61,19 @@ class PortfolioTickerSerializer(serializers.ModelSerializer):
 class PortfolioTransactionCreateSerializer(serializers.ModelSerializer):
     """
     Sérialiseur pour la création d'une transaction dans un portefeuille.
-    L'utilisateur est lié automatiquement à partir de la requête.
+    L'utilisateur et le portefeuille sont liés automatiquement à partir de la requête.
     """
+    portfolio = serializers.PrimaryKeyRelatedField(queryset=Portfolio.objects.all())
+    portfolio_ticker = serializers.PrimaryKeyRelatedField(queryset=PortfolioTicker.objects.all(), required=False, allow_null=True)
+    stock_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=6, required=False, allow_null=True)
+    currency = serializers.CharField(max_length=3, required=False, allow_null=True)
+
     class Meta:
         model = PortfolioTransaction
         fields = [
-            'portfolio_user', 'portfolio_ticker', 'operation', 'stock_price', 'date',
-            'amount', 'quantity', 'fees', 'notes'
+            'portfolio_user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
+            'amount', 'quantity', 'fees', 'currency'
         ]
         read_only_fields = ['portfolio_user']
 
@@ -76,27 +81,76 @@ class PortfolioTransactionCreateSerializer(serializers.ModelSerializer):
         validated_data['portfolio_user'] = self.context['request'].user
         return super().create(validated_data)
 
+    def validate(self, data):
+        user = self.context['request'].user
+        portfolio = data.get("portfolio")
+
+        if portfolio.user != user:
+            raise serializers.ValidationError("Ce portefeuille ne vous appartient pas.")
+
+        operation = data.get("operation")
+
+        if operation in ["buy", "sell"]:
+            if not data.get("portfolio_ticker") or data.get("stock_price") is None:
+                raise serializers.ValidationError("Le ticker et le prix sont requis pour un achat ou une vente.")
+
+        elif operation == "dividend":
+            if not data.get("portfolio_ticker") or data.get("quantity") is None:
+                raise serializers.ValidationError("Le ticker et la quantité sont requis pour un dividende.")
+
+        elif operation == "interet":
+            if data.get("portfolio_ticker"):
+                raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un intérêt.")
+            if data.get("quantity") is None:
+                raise serializers.ValidationError("La quantité est requise pour un intérêt.")
+
+        elif operation in ["deposit", "withdrawal"]:
+            if not data.get("currency"):
+                raise serializers.ValidationError("La devise est requise pour un dépôt ou un retrait.")
+            if data.get("portfolio_ticker"):
+                raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un dépôt ou un retrait.")
+
+        return data
+
 class PortfolioTransactionDetailSerializer(serializers.ModelSerializer):
     """
     Sérialiseur pour afficher une transaction avec des informations enrichies
     (nom de l’action, ticker, et arrondis numériques pour les montants).
     """
-    ticker = serializers.CharField(source='portfolio_ticker.ticker')
-    name = serializers.CharField(source='portfolio_ticker.ticker.name')
+    portfolio = serializers.StringRelatedField()
+    ticker = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
     stock_price = serializers.SerializerMethodField()
     fees = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
     quantity = serializers.SerializerMethodField()
+    currency = serializers.SerializerMethodField()
 
     class Meta:
         model = PortfolioTransaction
         fields = [
-            'operation', 'stock_price', 'date',
+            'portfolio', 'operation', 'stock_price', 'date', 'currency',
             'amount', 'quantity', 'fees', 'name', 'ticker', 'id'
         ]
 
+    def get_ticker(self, obj):
+        if obj.portfolio_ticker and obj.portfolio_ticker.ticker:
+            return obj.portfolio_ticker.ticker.ticker
+        return ""
+
+    def get_name(self, obj):
+        if obj.portfolio_ticker and obj.portfolio_ticker.ticker:
+            return obj.portfolio_ticker.ticker.name
+        return ""
+
+    def get_currency(self, obj):
+        if obj.currency:
+            currency_dict = dict(CURRENCY_CHOICES)
+            return currency_dict.get(obj.currency, obj.currency or "")
+        return ""
+
     def get_stock_price(self, obj):
-        return round(float(obj.stock_price), 2)
+        return round(float(obj.stock_price or 0), 2)
 
     def get_fees(self, obj):
         return round(float(obj.fees), 2)
@@ -105,28 +159,59 @@ class PortfolioTransactionDetailSerializer(serializers.ModelSerializer):
         return round(float(obj.amount), 2)
 
     def get_quantity(self, obj):
-        return round(float(obj.quantity), 2)
+        return round(float(obj.quantity or 0), 2)
 
 class PortfolioTransactionUpdateSerializer(serializers.ModelSerializer):
+    portfolio = serializers.PrimaryKeyRelatedField(queryset=Portfolio.objects.all())
+    portfolio_ticker = serializers.PrimaryKeyRelatedField(queryset=PortfolioTicker.objects.all(), required=False, allow_null=True)
+    stock_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    quantity = serializers.DecimalField(max_digits=10, decimal_places=6, required=False, allow_null=True)
+    currency = serializers.CharField(max_length=3, required=False, allow_null=True)
+
     class Meta:
         model = PortfolioTransaction
         fields = [
-            'portfolio_ticker',
-            'operation',
-            'stock_price',
-            'date',
-            'amount',
-            'quantity',
-            'fees',
-            'notes',
+            'portfolio_user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
+            'amount', 'quantity', 'fees', 'currency'
         ]
         read_only_fields = ['portfolio_user']
 
-    def validate(self, attrs):
-        operation = attrs.get('operation')
-        if operation not in dict(PortfolioTransaction.OPERATION_CHOICES):
-            raise serializers.ValidationError({"operation": "Opération invalide."})
-        return attrs
-    
-    def get_queryset(self):
-        return PortfolioTransaction.objects.filter(portfolio_user=self.request.user)
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+    def validate(self, data):
+        user = self.context['request'].user
+        portfolio = data.get("portfolio", self.instance.portfolio)
+        operation = data.get("operation", self.instance.operation)
+        portfolio_ticker = data.get("portfolio_ticker", self.instance.portfolio_ticker)
+        stock_price = data.get("stock_price", self.instance.stock_price)
+        quantity = data.get("quantity", self.instance.quantity)
+        currency = data.get("currency", self.instance.currency)
+
+        if portfolio.user != user:
+            raise serializers.ValidationError("Ce portefeuille ne vous appartient pas.")
+
+        if operation in ["buy", "sell"]:
+            if not portfolio_ticker or stock_price is None:
+                raise serializers.ValidationError("Le ticker et le prix sont requis pour un achat ou une vente.")
+
+        elif operation == "dividend":
+            if not portfolio_ticker or quantity is None:
+                raise serializers.ValidationError("Le ticker et la quantité sont requis pour un dividende.")
+
+        elif operation == "interet":
+            if portfolio_ticker:
+                raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un intérêt.")
+            if quantity is None:
+                raise serializers.ValidationError("La quantité est requise pour un intérêt.")
+
+        elif operation in ["deposit", "withdrawal"]:
+            if not currency:
+                raise serializers.ValidationError("La devise est requise pour un dépôt ou un retrait.")
+            if portfolio_ticker:
+                raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un dépôt ou un retrait.")
+
+        return data

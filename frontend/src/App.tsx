@@ -5,7 +5,7 @@ import Register from "./pages/Register";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import TransactionsPage from "./pages/TransactionsPage";
-import LayoutWithSidebar from "./components/Layout/LayoutWithSidebar";
+import LayoutWithSidebar from "./components/layout/LayoutWithSidebar";
 // import { PortfolioProvider } from "./context/PortfolioContext";
 
 function Logout() {

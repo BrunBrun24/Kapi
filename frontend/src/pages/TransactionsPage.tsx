@@ -1,4 +1,4 @@
-import PortfolioSelector from "../components/Portfolio/PortfolioSelector";
+import PortfolioSelector from "../components/portfolio/PortfolioSelector";
 
 function TransactionsPage() {
   return (

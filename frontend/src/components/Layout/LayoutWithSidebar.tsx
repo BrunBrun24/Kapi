@@ -1,7 +1,7 @@
 import Sidebar from "./Sidebar";
 import { Outlet } from "react-router-dom";
 
-import "../../static/css/Layout/LayoutWithSidebar.css";
+import "../../static/css/layout/LayoutWithSidebar.css";
 
 const LayoutWithSidebar = () => (
   <div className="app-container">

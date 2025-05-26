@@ -3,7 +3,7 @@ import { SquareArrowDown } from "lucide-react";
 
 import type { Transaction } from "../type";
 
-import "../../../static/css/Portfolio/Transaction/TransactionFilter.css";
+import "../../../static/css/portfolio/transaction/TransactionFilter.css";
 
 interface TransactionFilterProps {
   column: keyof Transaction;
@@ -49,11 +49,26 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
     }
   };
 
+  const getDisplayLabel = (value: string) => {
+    const labelMap: Record<string, string> = {
+      buy: "Achat",
+      sell: "Vente",
+      dividend: "Dividende",
+      interest: "Intérêt",
+      deposit: "Rentrer d'argent",
+      withdrawal: "Sortie d'argent",
+    };
+    return labelMap[value] || value;
+  };
+
+  const hasActiveFilter =
+    selectedValues.length > 0 && selectedValues.length < options.length;
+
   return (
     <div style={{ position: "relative" }}>
       <div
         onClick={handleToggleFilter}
-        className="filter-button"
+        className={`filter-button ${hasActiveFilter ? "active-filter" : ""}`}
         style={{ display: "flex", gap: "5px" }}
       >
         <SquareArrowDown size={20} style={{ cursor: "pointer" }} />
@@ -94,7 +109,7 @@ const TransactionFilter: React.FC<TransactionFilterProps> = ({
                     checked={selectedValues.includes(val)}
                     onChange={() => toggleValue(val)}
                   />
-                  {val}
+                  {getDisplayLabel(val)}
                 </label>
               ))}
             </div>

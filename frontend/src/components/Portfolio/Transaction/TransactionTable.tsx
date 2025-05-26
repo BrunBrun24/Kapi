@@ -1,18 +1,30 @@
 import React, { useEffect, useState } from "react";
-import { Edit, Trash2, MoveRight, MoveLeft } from "lucide-react";
+import {
+  Edit,
+  Trash2,
+  MoveRight,
+  MoveLeft,
+  Percent,
+  ShoppingCart,
+  BanknoteArrowDown,
+  BanknoteArrowUp,
+  Banknote,
+  Handshake,
+} from "lucide-react";
 import Swal from "sweetalert2";
 
 import api from "../../../api";
 import TransactionFilter from "./TransactionFilter";
-import type { Transaction } from "../type";
+import type { Ticker, Transaction } from "../type";
 
-import "../../../static/css/Portfolio/Transaction/TransactionTable.css";
+import "../../../static/css/portfolio/transaction/TransactionTable.css";
 
 interface TransactionTableProps {
-  selectedPortfolioId: string | null;
+  selectedPortfolioId: string;
   onEdit: (transaction: Transaction) => void;
   refreshKey: number;
   onRefresh: () => void;
+  tickersInPortfolio: Ticker[];
 }
 
 const TransactionTable: React.FC<TransactionTableProps> = ({
@@ -20,6 +32,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
   onEdit,
   refreshKey,
   onRefresh,
+  tickersInPortfolio,
 }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [currencySymbols, setCurrencySymbols] = useState<{
@@ -40,6 +53,21 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
   const [openedFilter, setOpenedFilter] = useState<keyof Transaction | null>(
     null
   );
+
+  const operationConfig = {
+    buy: { icon: <ShoppingCart size={15} />, label: "Achat" },
+    sell: { icon: <Handshake size={15} />, label: "Vente" },
+    dividend: { icon: <Banknote size={15} />, label: "Dividende" },
+    interest: { icon: <Percent size={15} />, label: "Intérêt" },
+    deposit: {
+      icon: <BanknoteArrowDown size={15} />,
+      label: "Rentrer d'argent",
+    },
+    withdrawal: {
+      icon: <BanknoteArrowUp size={15} />,
+      label: "Sortie d'argent",
+    },
+  };
 
   const updateFilter = (column: keyof Transaction, values?: string[]) => {
     setFilters((prev) => {
@@ -75,7 +103,6 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
 
         // Tri spécial pour les dates
         if (columnToSort === "date") {
-          console.log(columnToSort, "date");
           const aDate = new Date(aStr).getTime();
           const bDate = new Date(bStr).getTime();
           return sortOrder === "asc" ? aDate - bDate : bDate - aDate;
@@ -85,7 +112,6 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
         const aNum = Number(aStr);
         const bNum = Number(bStr);
         if (!isNaN(aNum) && !isNaN(bNum)) {
-          console.log(columnToSort, "asc");
           return sortOrder === "asc" ? aNum - bNum : bNum - aNum;
         }
 
@@ -164,7 +190,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     const fetchTransactions = async () => {
       try {
         const response = await api.get(
-          `/api/portfolio-transaction/get/${selectedPortfolioId}`
+          `/api/portfolio-transaction/${selectedPortfolioId}`
         );
         setTransactions(response.data);
       } catch (error) {
@@ -209,12 +235,6 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     if (result.isConfirmed) {
       try {
         await api.delete(`api/portfolio-transaction/${transactionId}/delete`);
-
-        await Swal.fire({
-          title: "Supprimé !",
-          text: "La transaction a bien été supprimé.",
-          icon: "success",
-        });
         onRefresh();
       } catch (error) {
         console.error("Erreur lors de la suppression de la transaction", error);
@@ -231,6 +251,26 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const formatNumberWithSymbol = (value: number, symbol: string): string => {
+    if (value === null || isNaN(value)) return "-";
+
+    const absValue = Math.abs(value);
+
+    let formatted: string;
+    if (absValue >= 1_000_000_000) {
+      formatted = (value / 1_000_000_000).toFixed(2).replace(/\.00$/, "") + "B";
+    } else if (absValue >= 1_000_000) {
+      formatted = (value / 1_000_000).toFixed(2).replace(/\.00$/, "") + "M";
+    } else if (absValue >= 1_000) {
+      formatted = (value / 1_000).toFixed(2).replace(/\.00$/, "") + "k";
+    } else {
+      formatted = value.toFixed(2).replace(/\.00$/, "");
+    }
+
+    // Si c’est abrégé (lettre en fin), on ne met pas le symbole
+    return /[kMB]$/.test(formatted) ? formatted : `${formatted} ${symbol}`;
+  };
 
   return (
     <div>
@@ -257,25 +297,6 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                 </th>
                 <th>
                   <div className="sort_button">
-                    Ticker
-                    <TransactionFilter
-                      column="ticker"
-                      options={getFilterOptions("ticker")}
-                      selectedValues={
-                        filters["ticker"] ?? getFilterOptions("ticker")
-                      }
-                      onChange={(values) => updateFilter("ticker", values)}
-                      onSortChange={(order) =>
-                        handleSortChange("ticker", order)
-                      }
-                      openedFilter={openedFilter}
-                      setOpenedFilter={setOpenedFilter}
-                    />
-                  </div>
-                </th>
-                <th>Company</th>
-                <th>
-                  <div className="sort_button">
                     Type
                     <TransactionFilter
                       column="operation"
@@ -286,6 +307,24 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                       onChange={(values) => updateFilter("operation", values)}
                       onSortChange={(order) =>
                         handleSortChange("operation", order)
+                      }
+                      openedFilter={openedFilter}
+                      setOpenedFilter={setOpenedFilter}
+                    />
+                  </div>
+                </th>
+                <th>
+                  <div className="sort_button">
+                    Ticker
+                    <TransactionFilter
+                      column="ticker"
+                      options={getFilterOptions("ticker")}
+                      selectedValues={
+                        filters["ticker"] ?? getFilterOptions("ticker")
+                      }
+                      onChange={(values) => updateFilter("ticker", values)}
+                      onSortChange={(order) =>
+                        handleSortChange("ticker", order)
                       }
                       openedFilter={openedFilter}
                       setOpenedFilter={setOpenedFilter}
@@ -345,78 +384,136 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     />
                   </div>
                 </th>
+                <th>Total</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedTransactions.map((transaction) => (
-                <tr key={transaction.id} className="body_row">
-                  <td className="date">
-                    {new Date(transaction.date)
-                      .toLocaleDateString("fr-CA")
-                      .replace(/-/g, "/")}
-                  </td>
-                  <td className="ticker">{transaction.ticker}</td>
-                  <td>{transaction.name}</td>
-                  <td>
-                    <span
-                      className={`tag ${
-                        transaction.operation === "buy"
-                          ? "buy"
-                          : transaction.operation === "sell"
-                          ? "sell"
-                          : "dividend"
+              {paginatedTransactions.map((transaction) => {
+                const tickerInfo = tickersInPortfolio.find(
+                  (t) => t.ticker === transaction.ticker
+                );
+
+                return (
+                  <tr key={transaction.id} className="body_row">
+                    <td className="date">
+                      {new Date(transaction.date)
+                        .toLocaleDateString("fr-CA")
+                        .replace(/-/g, "/")}
+                    </td>
+                    <td>
+                      <span className="type">
+                        {operationConfig[transaction.operation]?.icon}
+                        {operationConfig[transaction.operation]?.label}
+                      </span>
+                    </td>
+                    <td className="ticker">
+                      {transaction.ticker !== "" && tickerInfo ? (
+                        <>
+                          <img
+                            src={tickerInfo.logo}
+                            alt={`Logo de ${tickerInfo.ticker}`}
+                            className="tab-ticker-logo"
+                          />
+                          {tickerInfo.ticker}
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="numeric">
+                      {transaction.quantity !== 0 &&
+                      transaction.quantity != null
+                        ? formatNumberWithSymbol(
+                            transaction.quantity,
+                            currencySymbols[transaction.ticker] ||
+                              transaction.currency
+                          )
+                        : "-"}
+                    </td>
+                    <td className="numeric">
+                      {transaction.amount !== 0 && transaction.amount != null
+                        ? formatNumberWithSymbol(
+                            transaction.amount,
+                            currencySymbols[transaction.ticker] ||
+                              transaction.currency
+                          )
+                        : "-"}
+                    </td>
+                    <td className="numeric">
+                      {transaction.stock_price !== 0 &&
+                      transaction.stock_price != null
+                        ? `${transaction.stock_price} ${
+                            currencySymbols[transaction.ticker] || ""
+                          }`
+                        : "-"}
+                    </td>
+                    <td className="numeric">
+                      {transaction.fees !== 0
+                        ? formatNumberWithSymbol(
+                            transaction.fees,
+                            currencySymbols[transaction.ticker] ||
+                              transaction.currency
+                          )
+                        : "-"}
+                    </td>
+                    <td
+                      className={`numeric ${
+                        transaction.operation === "withdrawal"
+                          ? "negatif"
+                          : transaction.amount - (transaction.fees || 0) > 0
+                          ? "positive"
+                          : transaction.amount - (transaction.fees || 0) < 0
+                          ? "negatif"
+                          : ""
                       }`}
                     >
-                      {transaction.operation === "buy"
-                        ? "Buy"
-                        : transaction.operation === "sell"
-                        ? "Sell"
-                        : "Dividend"}
-                    </span>
-                  </td>
-                  <td className="numeric">{transaction.quantity}</td>
-                  <td className="numeric">
-                    {transaction.amount !== 0 && transaction.amount != null
-                      ? `${transaction.amount} ${
-                          currencySymbols[transaction.ticker] || ""
-                        }`
-                      : ""}
-                  </td>
-                  <td className="numeric">
-                    {transaction.stock_price !== 0 &&
-                    transaction.stock_price != null
-                      ? `${transaction.stock_price} ${
-                          currencySymbols[transaction.ticker] || ""
-                        }`
-                      : ""}
-                  </td>
-                  <td className="numeric">
-                    {transaction.fees !== 0 &&
-                    currencySymbols[transaction.ticker]
-                      ? `${transaction.fees} ${
-                          currencySymbols[transaction.ticker]
-                        }`
-                      : ""}
-                  </td>
-                  <td>
-                    <div className="actions">
-                      <button
-                        className="edit_button"
-                        onClick={() => onEdit(transaction)}
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        className="delete_button"
-                        onClick={() => handleDeleteTransaction(transaction.id)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      {(() => {
+                        const amount =
+                          transaction.operation === "withdrawal"
+                            ? -transaction.amount
+                            : transaction.amount;
+
+                        const netAmount = amount - (transaction.fees || 0);
+
+                        const symbol =
+                          transaction.operation === "withdrawal"
+                            ? ""
+                            : transaction.amount - (transaction.fees || 0) > 0
+                            ? "+"
+                            : "";
+
+                        return (
+                          symbol +
+                          formatNumberWithSymbol(
+                            netAmount,
+                            currencySymbols[transaction.ticker] ||
+                              transaction.currency
+                          )
+                        );
+                      })()}
+                    </td>
+                    <td>
+                      <div className="actions">
+                        <button
+                          className="edit_button"
+                          onClick={() => onEdit(transaction)}
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          className="delete_button"
+                          onClick={() =>
+                            handleDeleteTransaction(transaction.id)
+                          }
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

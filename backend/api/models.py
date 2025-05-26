@@ -44,7 +44,7 @@ CURRENCY_CHOICES = [
 
 class Company(models.Model):
     name = models.CharField(max_length=20)
-    ticker = models.CharField(max_length=5, unique=True, blank=False, null=False, primary_key=True)
+    ticker = models.CharField(max_length=5, unique=True, primary_key=True)
     isin = models.CharField(max_length=12, unique=True, blank=True, null=True)
     sector = models.CharField(max_length=50, blank=True, null=True)
     country = models.CharField(max_length=50, blank=True, null=True)
@@ -63,10 +63,10 @@ class Company(models.Model):
 class StockPrice(models.Model):
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field="ticker", db_column="ticker")
     date = models.DateField(blank=False, null=False)
-    open_price = models.DecimalField(max_digits=12, decimal_places=6, blank=False, null=False)
-    high_price = models.DecimalField(max_digits=12, decimal_places=6, blank=False, null=False)
-    low_price = models.DecimalField(max_digits=12, decimal_places=6, blank=False, null=False)
-    close_price = models.DecimalField(max_digits=12, decimal_places=6, blank=False, null=False)
+    open_price = models.DecimalField(max_digits=12, decimal_places=6)
+    high_price = models.DecimalField(max_digits=12, decimal_places=6)
+    low_price = models.DecimalField(max_digits=12, decimal_places=6)
+    close_price = models.DecimalField(max_digits=12, decimal_places=6)
     volume = models.BigIntegerField()
 
     class Meta:
@@ -87,7 +87,7 @@ class UserPreference(models.Model):
 
 class Portfolio(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    name = models.CharField(max_length=20, blank=False, null=False)
+    name = models.CharField(max_length=20)
 
     def __str__(self):
         return f"{self.user.email} - {self.name}"
@@ -103,7 +103,7 @@ class Portfolio(models.Model):
 class PortfolioTicker(models.Model):
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
-    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, blank=False, null=False)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES)
 
     class Meta:
         unique_together = ("portfolio", "ticker")
@@ -116,17 +116,21 @@ class PortfolioTransaction(models.Model):
         ('buy', 'Achat'),
         ('sell', 'Vente'),
         ('dividend', 'Dividende'),
+        ('interest', 'Intérêt'),
+        ('deposit', "Dépôt"),
+        ('withdrawal', "Retrait"),
     ]
 
     portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    portfolio_ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE)
-    operation = models.CharField(max_length=8, choices=OPERATION_CHOICES, blank=False, null=False)
-    stock_price = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
+    portfolio_ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE, blank=True, null=True)
+    operation = models.CharField(max_length=10, choices=OPERATION_CHOICES)
     date = models.DateField(blank=False, null=False)
-    amount = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
-    quantity = models.DecimalField(max_digits=10, decimal_places=6, blank=False, null=False)
-    fees = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
-    notes = models.CharField(max_length=150, blank=True, null=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    fees = models.DecimalField(max_digits=12, decimal_places=2)
+    stock_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    quantity = models.DecimalField(max_digits=10, decimal_places=6, blank=True, null=True)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, blank=True, null=True)
 
     def __str__(self):
         return f"{self.operation.upper()} - {self.portfolio_ticker.ticker} - {self.quantity}"
@@ -135,12 +139,3 @@ class PortfolioTransaction(models.Model):
     def get_user_portfolios(cls, user):
         return cls.objects.filter(portfolio_user=user)
 
-class PortfolioDepositOfMoney(models.Model):
-    portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    deposit_of_money = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
-    date = models.DateField(blank=False, null=False)
-    fees = models.DecimalField(max_digits=10, decimal_places=2, blank=False, null=False)
-    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, blank=False, null=False)
-
-    def __str__(self):
-        return f"{self.portfolio_user.email} - {self.deposit_of_money} {self.currency}"

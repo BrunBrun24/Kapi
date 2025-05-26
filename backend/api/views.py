@@ -1,7 +1,6 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
-from django.http import HttpResponseServerError
 from django.shortcuts import get_object_or_404
 import pandas as pd
 from rest_framework import generics, permissions, status
@@ -12,6 +11,8 @@ from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
+from api.utils import html_error_response
+
 from .models import (
     CURRENCY_CHOICES,
     Company,
@@ -19,8 +20,7 @@ from .models import (
     UserPreference,
     Portfolio,
     PortfolioTicker,
-    PortfolioTransaction,
-    PortfolioDepositOfMoney
+    PortfolioTransaction
 )
 
 from .serializers import (
@@ -134,7 +134,7 @@ class PortfolioTickersView(APIView):
         ]
         return Response(data, status=200)
 
-class AvailablePortfolioTickersView(APIView):
+class PortfolioAvailableTickersView(APIView):
     """
     Retourne tous les tickers qui ne sont pas encore associés à un portefeuille donné.
     Nécessite l'identifiant du portefeuille.
@@ -190,39 +190,54 @@ class DeletePortfolioTickerView(APIView):
 # Transaction
 class PortfolioTransactionCreateView(generics.CreateAPIView):
     """
-    Permet à un utilisateur authentifié de créer une transaction (achat/vente)
-    sur un ticker présent dans l’un de ses portefeuilles.
-    Fait des validations supplémentaires sur les valeurs numériques et
-    la présence du ticker dans le portefeuille utilisateur.
+    Permet à un utilisateur authentifié de créer une transaction (achat/vente/dividende/intérêt/dépôt/retrait)
+    sur un ticker présent dans l’un de ses portefeuilles, ou sans ticker si applicable.
+    Valide dynamiquement les valeurs numériques et la cohérence de l'opération.
     """
     serializer_class = PortfolioTransactionCreateSerializer
     permission_classes = [IsAuthenticated]
 
-    
     def create(self, request, *args, **kwargs):
         data = request.data.copy()
 
         try:
+            portfolio = Decimal(data["portfolio"])
             amount = Decimal(data["amount"])
             fees = Decimal(data["fees"])
-            stock_price = Decimal(data["stock_price"])
-            if data["operation"] in ["buy", "sell"]:
+            operation = data["operation"]
+
+            if operation in ["buy", "sell"]:
+                stock_price = Decimal(data["stock_price"])
                 quantity = round(amount / stock_price, 6)
+                currency = None
+                try:
+                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], request.user).pk
+                except PortfolioTicker.DoesNotExist:
+                    return Response({"detail": "Ticker not found in user's portfolio."}, status=status.HTTP_400_BAD_REQUEST)
+            elif operation == "dividend":
+                quantity = Decimal(data["quantity"])
+                stock_price = None
+                currency = None
+                try:
+                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], request.user).pk
+                except PortfolioTicker.DoesNotExist:
+                    return Response({"detail": "Ticker not found in user's portfolio."}, status=status.HTTP_400_BAD_REQUEST)
+            elif operation == "interet":
+                quantity = Decimal(data["quantity"])
+                stock_price = None
+                portfolio_ticker = None
+                currency = None
+            elif operation in ["deposit", "withdrawal"]:
+                quantity = None
+                stock_price = None
+                portfolio_ticker = None
+                currency = data["currency"]
             else:
-                quantity = data["quantity"]
+                return Response({"detail": "Opération non supportée."}, status=status.HTTP_400_BAD_REQUEST)
+
         except (ValueError, TypeError, InvalidOperation):
             return Response({"detail": "Invalid numeric value."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Vérification du ticker
-        try:
-            portfolio_ticker = PortfolioTicker.objects.get(
-                ticker=data["portfolio_ticker"],
-                portfolio__user=request.user
-            )
-        except PortfolioTicker.DoesNotExist:
-            return Response({"detail": "Ticker not found in user's portfolio."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Formatage correct de la date
         try:
             if isinstance(data["date"], str):
                 date = datetime.fromisoformat(data["date"]).date()
@@ -233,16 +248,19 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
         except Exception:
             return Response({"detail": "Invalid date format."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 🔍 Recherche d'une transaction existante
-        existing_tx = PortfolioTransaction.objects.filter(
-            portfolio_ticker=portfolio_ticker,
-            date=date,
-            stock_price=stock_price,
-            operation=data["operation"]
-        ).first()
+        # Recherche d'une transaction existante (si ticker présent)
+        existing_tx = None
+        if portfolio_ticker and operation in ["buy", "sell"]:
+            existing_tx = PortfolioTransaction.objects.filter(
+                portfolio=portfolio,
+                portfolio_ticker=portfolio_ticker,
+                date=date,
+                stock_price=stock_price,
+                operation=operation,
+                currency=currency
+            ).first()
 
         if existing_tx:
-            print("existe")
             existing_tx.amount += amount
             existing_tx.fees += fees
             existing_tx.quantity = round(existing_tx.amount / existing_tx.stock_price, 6)
@@ -251,16 +269,16 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             serializer = self.get_serializer(existing_tx)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-        # ✅ Création d'une nouvelle transaction
         serializer_data = {
-            "portfolio_ticker": portfolio_ticker.pk,
-            "operation": data["operation"],
+            "portfolio": portfolio,
+            "portfolio_ticker": portfolio_ticker,
+            "operation": operation,
             "date": date,
             "amount": amount,
             "fees": fees,
             "stock_price": stock_price,
             "quantity": quantity,
-            "notes": data.get("notes", "")
+            "currency": currency,
         }
 
         serializer = self.get_serializer(data=serializer_data, context={'request': request})
@@ -271,7 +289,13 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             print("❌ Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class AllUserTransactionsView(APIView):
+    def get_portfolio_ticker(self, ticker, user):
+        return PortfolioTicker.objects.get(
+            ticker=ticker,
+            portfolio__user=user
+        )
+
+class UserTransactionsView(APIView):
     """
     Récupère toutes les transactions de tous les portefeuilles de l'utilisateur connecté.
     """
@@ -279,20 +303,24 @@ class AllUserTransactionsView(APIView):
 
     def get(self, request):
         transactions = PortfolioTransaction.objects.filter(
-            portfolio_user=request.user
+            portfolio_ticker__portfolio__user=request.user
         ).select_related("portfolio_ticker", "portfolio_ticker__portfolio")
-        
+
         serializer = PortfolioTransactionDetailSerializer(transactions, many=True)
         return Response(serializer.data)
 
-class UserPortefeuilleTransactionsView(APIView):
+class PortfolioTransactionsView(APIView):
+    """
+    Récupère toutes les transactions associées à un portefeuille donné,
+    appartenant à l'utilisateur authentifié.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, portfolio_id):
-        get_object_or_404(Portfolio, id=portfolio_id, user=request.user)
+        portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=request.user)
 
         transactions = PortfolioTransaction.objects.filter(
-            portfolio_ticker__portfolio_id=portfolio_id
+            portfolio=portfolio
         ).order_by("-date")
 
         serializer = PortfolioTransactionDetailSerializer(transactions, many=True)
@@ -308,7 +336,7 @@ class DeletePortfolioTransactionView(APIView):
         try:
             transaction = PortfolioTransaction.objects.get(
                 id=transaction_id,
-                portfolio_user=request.user
+                portfolio_ticker__portfolio__user=request.user
             )
         except PortfolioTransaction.DoesNotExist:
             return Response(
@@ -322,29 +350,39 @@ class DeletePortfolioTransactionView(APIView):
             status=status.HTTP_204_NO_CONTENT
         )
 
-class UpdateTransactionView(UpdateAPIView):
+class UpdatePortfolioTransactionView(UpdateAPIView):
     """
     Permettre à un utilisateur authentifié de modifier une transaction d'un de ses portefeuilles
     """
     queryset = PortfolioTransaction.objects.all()
     serializer_class = PortfolioTransactionUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return PortfolioTransaction.objects.filter(
+            portfolio_ticker__portfolio__user=self.request.user
+        )
 
     def update(self, request, *args, **kwargs):
         data = request.data.copy()
         data['quantity'] = round(float(data.get('quantity', 0)), 6)
 
-        try:
-            portfolio_ticker = PortfolioTicker.objects.get(
-                ticker=data['portfolio_ticker'],
-                portfolio__user=request.user
-            )
-        except PortfolioTicker.DoesNotExist:
-            return Response(
-                {"detail": "Ticker not found in user's portfolio."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        operation = data.get('operation')
 
-        data['portfolio_ticker'] = portfolio_ticker.pk
+        if operation in ["buy", "sell", "dividend"]:
+            try:
+                portfolio_ticker = PortfolioTicker.objects.get(
+                    ticker=data['portfolio_ticker'],
+                    portfolio__user=request.user
+                )
+            except PortfolioTicker.DoesNotExist:
+                return Response(
+                    {"detail": "Ticker not found in user's portfolio."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            data['portfolio_ticker'] = portfolio_ticker.pk
+
+        # Pas besoin de gérer le portfolio_ticker pour deposit, withdrawal, interet
 
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
@@ -357,116 +395,160 @@ class UpdateTransactionView(UpdateAPIView):
         self.perform_update(serializer)
         return Response(serializer.data)
 
-class ExcelTransactionUploadView(APIView):
+class ExcelPortfolioTransactionUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         file_upload = request.FILES.get("file")
         if not file_upload:
-            return Response({"detail": "Aucun fichier fourni."}, status=status.HTTP_400_BAD_REQUEST)
+            return html_error_response("Erreur d'import", ["Aucun fichier fourni."])
+        
+        portfolio = request.data.get("portfolioId")
 
         try:
             data = pd.read_excel(BytesIO(file_upload.read()), engine='openpyxl')
             data.columns = data.columns.str.strip()
         except Exception as e:
-            return Response({"detail": f"Erreur de lecture du fichier : {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            return html_error_response("Erreur de lecture du fichier", [str(e)])
 
         expected_columns = [
             'Ticker', 'Type', 'Date',
-            'Montant', "Prix de l'action lors de la transaction", 'Quantité', 'Frais'
+            'Montant', "Prix de l'action lors de la transaction", 'Quantité', 'Frais', 'Devise'
         ]
         if not all(col in data.columns for col in expected_columns):
-            return Response({
-                "detail": f"Colonnes attendues : {expected_columns}",
-                "reçues": list(data.columns)
-            }, status=status.HTTP_400_BAD_REQUEST)
+            lignes = [
+                f"Colonnes attendues : {', '.join(expected_columns)}",
+                f"Colonnes reçues : {', '.join(data.columns)}"
+            ]
+            return html_error_response("Colonnes Excel incorrectes", lignes)
 
-        # 🧠 Combine les lignes similaires
+        # Nettoyage des valeurs vides
+        data['Ticker'] = data['Ticker'].fillna('')
+        data['Devise'] = data['Devise'].fillna('')
         data['Date'] = pd.to_datetime(data['Date']).dt.date
+
+        # Groupement des lignes similaires
         grouped = data.groupby([
-            'Ticker', 
-            'Type', 
-            'Date', 
-            "Prix de l'action lors de la transaction",
+            'Ticker',
+            'Type',
+            'Date',
+            'Devise',
+            "Prix de l'action lors de la transaction"
         ], as_index=False).agg({
             'Montant': 'sum',
             'Quantité': 'sum',
             'Frais': 'sum'
         })
 
+        # Vérifie que tous les tickers sont bien dans le portefeuille
+        tickers_in_excel = set(ticker for ticker in grouped['Ticker'].unique() if ticker.strip())
+
+        # Récupère les tickers déjà présents dans le portefeuille de l'utilisateur
+        existing_tickers = set(
+            PortfolioTicker.objects.filter(
+                portfolio_id=portfolio,
+                portfolio__user=request.user
+            ).values_list("ticker__ticker", flat=True)
+        )
+        # Détermine les tickers manquants
+        missing_tickers = tickers_in_excel - existing_tickers
+        # Si certains tickers ne sont pas dans le portefeuille, retourne une erreur HTML
+        if missing_tickers:
+            lignes = [
+                "Les tickers suivants ne sont pas présents dans votre portefeuille :",
+                "<ul>" + "".join(f"<li>{ticker}</li>" for ticker in sorted(missing_tickers)) + "</ul>",
+                "Merci d'ajouter ces tickers avant d'importer le fichier."
+            ]
+            return html_error_response("Tickers manquants", lignes)
+
+
         to_create = []
         to_update = []
-
         for index, row in grouped.iterrows():
-            try:
-                portfolio_ticker = PortfolioTicker.objects.get(
-                    ticker=row['Ticker'],
-                    portfolio__user=request.user
-                )
-            except PortfolioTicker.DoesNotExist:
-                html_error = f"<h2>Erreur ligne {index + 2}</h2><br><p>Ticker {row['Ticker']} introuvable dans votre portefeuille.</p>"
-                return HttpResponseServerError(html_error)
-
             operation = row['Type']
             date = row['Date']
+            ticker = row['Ticker']
+            currency = row.get("Devise")
+
             try:
                 amount = Decimal(abs(float(row['Montant'])))
                 fees = Decimal(abs(float(row['Frais'])))
                 stock_price = Decimal(float(row["Prix de l'action lors de la transaction"]))
-                if operation in ["buy", "sell"]:
-                    try:
-                        quantity = round((amount - fees) / stock_price, 6)
-                    except ZeroDivisionError:
-                        return Response({"detail": f"Erreur division par zéro ligne {index + 2} (prix d'action à 0)."}, status=status.HTTP_400_BAD_REQUEST)
-                else:
-                    quantity = Decimal(abs(float(row['Quantité'])))
+                quantity = Decimal(abs(float(row['Quantité'])))
             except Exception as e:
-                return Response({"detail": f"Erreur de conversion ligne {index + 2}: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+                return html_error_response(
+                    f"Erreur ligne {index + 2}",
+                    [f"Problème de conversion numérique : {str(e)}"]
+                )
 
-            # Recherche transaction existante
-            existing_tx = PortfolioTransaction.objects.filter(
-                portfolio_ticker=portfolio_ticker,
-                date=date,
-                stock_price=stock_price,
-                operation=operation
-            ).first()
+            portfolio_ticker = None
+            if operation in ["buy", "sell", "dividend"]:
+                try:
+                    portfolio_ticker = PortfolioTicker.objects.get(
+                        ticker=ticker,
+                        portfolio__user=request.user
+                    )
+                except PortfolioTicker.DoesNotExist:
+                    return html_error_response(
+                        f"Erreur ligne {index + 2}",
+                        [f"Le ticker <strong>{ticker}</strong> n'est pas présent dans votre portefeuille."]
+                    )
+
+            # Calcul de quantité si achat/vente
+            if operation in ["buy", "sell"]:
+                if stock_price == 0:
+                    return html_error_response(
+                        f"Erreur ligne {index + 2}",
+                        ["Division par zéro : le prix de l'action est égal à 0."]
+                    )
+                quantity = round((amount - fees) / stock_price, 6)
+
+            # Recherche d'une transaction existante pour mise à jour éventuelle
+            existing_tx = None
+            if operation in ["buy", "sell", "dividend"]:
+                existing_tx = PortfolioTransaction.objects.filter(
+                    portfolio=portfolio,
+                    portfolio_ticker=portfolio_ticker,
+                    date=date,
+                    stock_price=stock_price,
+                    operation=operation
+                ).first()
 
             if existing_tx:
-                # Préparer la MAJ
                 new_amount = existing_tx.amount + amount
                 new_fees = existing_tx.fees + fees
                 if operation in ["buy", "sell"]:
                     new_quantity = round(new_amount / stock_price, 6)
                 else:
-                    new_quantity = 0
+                    new_quantity = quantity
 
-                # Pas besoin de sérialiseur, juste validation manuelle si tu veux
                 to_update.append((existing_tx, new_amount, new_fees, new_quantity))
             else:
-                # Sérialiseur pour validation complète
                 serializer_data = {
-                    "portfolio_ticker": portfolio_ticker.pk,
+                    "portfolio": portfolio,
                     "operation": operation,
                     "date": date,
-                    "amount": abs(float(row['Montant'])),
-                    "stock_price": round(float(row["Prix de l'action lors de la transaction"]), 2),
-                    "quantity": float(quantity),
-                    "fees": abs(float(row['Frais'])),
-                    "notes": ""
+                    "amount": round(float(amount), 2),
+                    "fees": round(float(fees), 2),
+                    "quantity": round(float(quantity), 6),
+                    "stock_price": round(float(stock_price), 2) if operation in ["buy", "sell"] else None,
+                    "portfolio_ticker": portfolio_ticker.pk if portfolio_ticker else None,
+                    "currency": currency if operation in ["deposit", "withdrawal", "interest"] else None,
                 }
 
                 serializer = PortfolioTransactionCreateSerializer(data=serializer_data, context={'request': request})
                 if not serializer.is_valid():
-                    html_error = f"<h2>Erreur ligne {index + 2}</h2><pre>{serializer.errors}</pre>"
-                    return HttpResponseServerError(html_error)
+                    return html_error_response(
+                        f"Erreur ligne {index + 2}",
+                        [f"Erreurs de validation : <pre>{serializer.errors}</pre>"]
+                    )
 
                 to_create.append(serializer)
 
-        # ✅ Si on arrive ici, toutes les lignes sont valides → exécution dans une seule transaction
+        # ✅ Transaction atomique
         with transaction.atomic():
             for serializer in to_create:
                 serializer.save()
-
             for instance, new_amount, new_fees, new_quantity in to_update:
                 instance.amount = new_amount
                 instance.fees = new_fees
@@ -475,7 +557,7 @@ class ExcelTransactionUploadView(APIView):
 
         return Response({"importées": len(to_create) + len(to_update)}, status=status.HTTP_201_CREATED)
 
-    
+
 
 class TickerListView(APIView):
     """
@@ -520,4 +602,3 @@ class CurrencyTickerView(APIView):
         }
 
         return Response(ticker_currency_map)
-    

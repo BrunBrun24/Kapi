@@ -44,11 +44,10 @@
 }
 
 .filter-values label input[type="checkbox"] {
-  width: 14px;   /* taille réduite */
+  width: 14px; /* taille réduite */
   height: 14px;
   accent-color: #2563eb; /* couleur personnalisée si supporté */
 }
-
 
 .sort-buttons {
   display: flex;
@@ -88,4 +87,9 @@
   padding: 5px 15px;
   border-top: 1px solid #eee;
   background-color: #f1f1f1;
+}
+
+.active-filter {
+  color: #2563eb;
+  border-radius: 4px;
 }

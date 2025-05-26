@@ -13,7 +13,8 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
-import "../../static/css/Layout/Sidebar.css";
+
+import "../../static/css/layout/Sidebar.css";
 
 interface SidebarItemProps {
   icon: React.ReactNode;

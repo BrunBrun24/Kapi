@@ -1,4 +1,4 @@
-import "../../static/css//Auth/LoadingIndicator.css";
+import "../../static/css/auth/LoadingIndicator.css";
 
 const LoadingIndicator = () => {
   return (

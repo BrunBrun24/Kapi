@@ -6,8 +6,8 @@ import api from "../../api";
 import PortfolioTickers from "./PortfolioTickers";
 import type { Portfolio } from "./type";
 
-import "../../static/css/Portfolio/PortfolioSelector.css";
-import "../../static/css/Portfolio/form.css";
+import "../../static/css/portfolio/PortfolioSelector.css";
+import "../../static/css/portfolio/form.css";
 
 const PortfolioSelector: React.FC = () => {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
@@ -20,7 +20,7 @@ const PortfolioSelector: React.FC = () => {
   useEffect(() => {
     const fetchPortfolios = async () => {
       try {
-        const res = await api.get("/api/portfolio/get/");
+        const res = await api.get("/api/portfolios/");
         const userPortfolios = res.data;
         setPortfolios(userPortfolios);
         if (userPortfolios.length > 0) {
@@ -75,15 +75,9 @@ const PortfolioSelector: React.FC = () => {
 
     if (result.isConfirmed) {
       try {
-        await api.delete(`/portfolios/${id}/delete/`);
+        await api.delete(`/api/portfolios/${id}/delete/`);
         setPortfolios((prev) => prev.filter((p) => p.id !== id));
         setSelectedPortfolioId(null);
-
-        await Swal.fire({
-          title: "Supprimé !",
-          text: "Le portefeuille a bien été supprimé.",
-          icon: "success",
-        });
       } catch (error) {
         console.error("Erreur lors de la suppression du portefeuille", error);
         Swal.fire({
@@ -117,7 +111,7 @@ const PortfolioSelector: React.FC = () => {
 
     if (formValues) {
       try {
-        const response = await api.put(`/api/portfolio/update/${id}/`, {
+        const response = await api.put(`/api/portfolio/${id}/update/`, {
           name: formValues.name,
         });
 

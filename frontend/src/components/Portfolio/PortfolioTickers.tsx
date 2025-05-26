@@ -3,16 +3,16 @@ import { ChevronDown, ChevronUp, PlusCircle, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
 
 import api from "../../api";
-import TransactionForm from "./Transaction/TransactionForm";
-import type {
-  Ticker,
-  TickerNotInPortfolio,
-  Currency,
-  PortfolioIdProps,
-} from "./type";
+import TransactionForm from "./transaction/TransactionForm";
+import { useCurrencySearch } from "../hook/useCurrencySearch";
+import type { Ticker, TickerNotInPortfolio } from "./type";
 
-import "../../static/css/Portfolio/PortfolioTicker.css";
-import "../../static/css/Portfolio/form.css";
+import "../../static/css/portfolio/PortfolioTicker.css";
+import "../../static/css/portfolio/form.css";
+
+export interface PortfolioIdProps {
+  selectedPortfolioId: string | null;
+}
 
 const PortfolioTickers: React.FC<PortfolioIdProps> = ({
   selectedPortfolioId,
@@ -23,18 +23,32 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
   const [tickersNotInPortfolio, setTickersNotInPortfolio] = useState<
     TickerNotInPortfolio[]
   >([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [formData, setFormData] = useState({
     ticker: "",
     currency: "",
   });
 
   const [searchTicker, setSearchTicker] = useState("");
-  const [searchCurrency, setSearchCurrency] = useState("");
   const [filteredTickers, setFilteredTickers] = useState<
     { ticker: string; name: string }[]
   >([]);
-  const [filteredCurrency, setFilteredCurrency] = useState<Currency[]>([]);
+
+  const {
+    searchCurrency,
+    filteredCurrency,
+    selectedCurrency,
+    handleSearchChangeCurrency,
+    handleSelectCurrency,
+  } = useCurrencySearch();
+
+  useEffect(() => {
+    if (selectedCurrency) {
+      setFormData((prev) => ({
+        ...prev,
+        currency: selectedCurrency,
+      }));
+    }
+  }, [selectedCurrency]);
 
   const fetchTickersInPortfolio = async () => {
     try {
@@ -78,20 +92,6 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     fetchTickersNotInPortfolio();
   }, [selectedPortfolioId]);
 
-  useEffect(() => {
-    const fetchCurrency = async () => {
-      try {
-        const res = await api.get(`/api/currencies/`);
-        const currencies = res.data;
-        setCurrencies(currencies);
-      } catch (error) {
-        console.error("Erreur lors de la récupération des devises", error);
-      }
-    };
-
-    fetchCurrency();
-  }, []);
-
   // Filtrer les tickers en fonction de la recherche
   const handleSearchChangeTicker = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -107,16 +107,6 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     setFilteredTickers(filtered.slice(0, 10)); // Limiter à 10 résultats
   };
 
-  // Filtrer les devises en fonction de la recherche
-  const handleSearchChangeCurrency = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const query = e.target.value;
-    setSearchCurrency(query);
-
-    setFilteredCurrency(currencies.slice(0, 10)); // Limiter à 10 résultats
-  };
-
   const handleSelectTicker = (ticker: string) => {
     // Mettre à jour le champ de recherche avec le ticker sélectionné
     setSearchTicker(`${ticker}`);
@@ -127,18 +117,6 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
       ticker,
     }));
     setFilteredTickers([]);
-  };
-
-  const handleSelectCurrency = (currency: string) => {
-    // Mettre à jour le champ de recherche avec le ticker sélectionné
-    setSearchCurrency(`${currency}`);
-
-    // Mettre à jour les valeurs de formData avec le ticker et le nom de la société
-    setFormData((prev) => ({
-      ...prev,
-      currency,
-    }));
-    setFilteredCurrency([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,7 +142,6 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
         currency: "",
       });
       setSearchTicker("");
-      setSearchCurrency("");
       setIsFormOpen(false);
       await fetchTickersInPortfolio();
       await fetchTickersNotInPortfolio();
@@ -340,7 +317,10 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
 
       {/* Si aucun ticker n'a été selectionné alors ne pas afficher les transactions */}
       {tickersInPortfolio.length !== 0 && (
-        <TransactionForm selectedPortfolioId={selectedPortfolioId} />
+        <TransactionForm
+          selectedPortfolioId={selectedPortfolioId}
+          tickersInPortfolio={tickersInPortfolio}
+        />
       )}
     </>
   );

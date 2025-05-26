@@ -4,12 +4,19 @@ import { PlusCircle } from "lucide-react";
 import api from "../../../api";
 import TransactionTable from "./TransactionTable";
 import ExcelUploader from "../file/ExcelUploader";
-import type { PortfolioIdProps, Transaction } from "../type";
+import type { Ticker, Transaction } from "../type";
 
-import "../../../static/css/Portfolio/form.css";
+import "../../../static/css/portfolio/form.css";
+import { useCurrencySearch } from "../../hook/useCurrencySearch";
+
+export interface PortfolioIdProps {
+  selectedPortfolioId: string;
+  tickersInPortfolio: Ticker[];
+}
 
 const TransactionForm: React.FC<PortfolioIdProps> = ({
   selectedPortfolioId,
+  tickersInPortfolio,
 }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -20,7 +27,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     amount: 0,
     date: new Date().toISOString().split("T")[0],
     fees: 0,
-    notes: "",
+    currency: "",
   });
 
   const [tickers, setTickers] = useState<{ ticker: string; name: string }[]>(
@@ -33,6 +40,24 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
   const [editMode, setEditMode] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const {
+    allCurrencies,
+    searchCurrency,
+    filteredCurrency,
+    selectedCurrency,
+    handleSearchChangeCurrency,
+    handleSelectCurrency,
+  } = useCurrencySearch();
+
+  useEffect(() => {
+    if (selectedCurrency) {
+      setFormData((prev) => ({
+        ...prev,
+        currency: selectedCurrency,
+      }));
+    }
+  }, [selectedCurrency]);
 
   const fetchTickers = async () => {
     if (!selectedPortfolioId) return;
@@ -85,16 +110,27 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     e.preventDefault();
     if (!selectedPortfolioId) return;
 
-    const payload = {
-      portfolio_ticker: formData.ticker.toUpperCase(),
+    const operation = formData.operation;
+    const commonPayload = {
       operation: formData.operation,
-      stock_price: formData.stock_price,
-      quantity: formData.quantity,
       amount: formData.amount,
       date: formData.date,
       fees: formData.fees,
-      notes: formData.notes,
     };
+
+    // Construction du payload selon l'opération
+    let payload: any = { ...commonPayload };
+    payload.portfolio = selectedPortfolioId;
+
+    if (["buy", "sell"].includes(operation)) {
+      payload.portfolio_ticker = formData.ticker.toUpperCase();
+      payload.stock_price = formData.stock_price;
+    } else if (["dividend"].includes(operation)) {
+      payload.portfolio_ticker = formData.ticker.toUpperCase();
+      payload.quantity = formData.quantity;
+    } else if (["deposit", "withdrawal", "interest"].includes(operation)) {
+      payload.currency = formData.currency;
+    }
 
     try {
       if (editMode && transactionId) {
@@ -104,7 +140,6 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
         );
         if (response.status !== 200)
           throw new Error("Failed to update transaction");
-        console.log("Transaction updated successfully");
       } else {
         const response = await api.post(
           "/api/portfolio-transaction/create/",
@@ -112,7 +147,6 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
         );
         if (response.status !== 201)
           throw new Error("Failed to add transaction");
-        console.log("Transaction added successfully");
       }
 
       resetForm();
@@ -135,11 +169,12 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
       amount: 0,
       date: new Date().toISOString().split("T")[0],
       fees: 0,
-      notes: "",
+      currency: "",
     });
     setIsFormOpen(false);
     setEditMode(false);
     setTransactionId(null);
+    handleSelectCurrency("");
   };
 
   const handleEditTransaction = (tx: Transaction) => {
@@ -154,9 +189,20 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
       amount: tx.amount,
       date: tx.date,
       fees: tx.fees ?? 0,
-      notes: tx.notes || "",
+      currency: tx.currency,
     });
     setSearchQuery(tx.ticker);
+
+    // 🔁 Convertir le symbole en code ISO si nécessaire
+    const matchedCurrency = allCurrencies.find(
+      (cur) => cur.label === tx.currency || cur.code === tx.currency
+    );
+
+    if (matchedCurrency) {
+      handleSelectCurrency(matchedCurrency.code);
+    } else {
+      handleSelectCurrency(tx.currency); // fallback
+    }
   };
 
   if (!selectedPortfolioId) return null;
@@ -166,13 +212,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
       <div className="form-header">
         <h2 className="form-title">Transactions</h2>
         <button
-          onClick={() => {
-            if (isFormOpen) {
-              resetForm();
-            } else {
-              setIsFormOpen(true);
-            }
-          }}
+          onClick={() => (isFormOpen ? resetForm() : setIsFormOpen(true))}
           className="form-toggle"
         >
           {isFormOpen ? (
@@ -188,7 +228,6 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
 
       {isFormOpen ? (
         <form onSubmit={handleSubmit} className="form-fields">
-          {/* champ recherche + date */}
           <div className="form-grid-2">
             <div>
               <label className="form-label">Type de transaction</label>
@@ -198,9 +237,12 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                 onChange={handleChange}
                 className="form-input"
               >
-                <option value="buy">Buy</option>
-                <option value="sell">Sell</option>
-                <option value="dividend">Dividend</option>
+                <option value="buy">Achat</option>
+                <option value="sell">Vente</option>
+                <option value="dividend">Dividende</option>
+                <option value="interest">Intérêt</option>
+                <option value="deposit">Rentrer d'argent</option>
+                <option value="withdrawal">Sortie d'argent</option>
               </select>
             </div>
             <div>
@@ -216,53 +258,53 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
             </div>
           </div>
 
-          {/* opération + montant */}
-          <div className="form-grid-2">
-            <div>
-              <label className="form-label">
-                Rechercher un Ticker ou une Company
-              </label>
-              <div style={{ position: "relative" }}>
+          {["buy", "sell", "dividend"].includes(formData.operation) && (
+            <div className="form-grid-2">
+              <div>
+                <label className="form-label">
+                  Rechercher un Ticker ou une Company
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    placeholder="Tapez un ticker ou une company"
+                    className="form-input"
+                  />
+                  {filteredTickers.length > 0 && (
+                    <ul className="dropdown-list">
+                      {filteredTickers.map((ticker) => (
+                        <li
+                          key={ticker.ticker}
+                          onClick={() => handleSelectTicker(ticker.ticker)}
+                          className="dropdown-item"
+                        >
+                          {ticker.ticker} ({ticker.name})
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="form-label">Montant</label>
                 <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                  placeholder="Tapez un ticker ou une company"
+                  type="number"
+                  name="amount"
+                  value={formData.amount}
+                  onChange={handleChange}
+                  min="0.01"
+                  step="0.01"
                   className="form-input"
+                  required
                 />
-                {filteredTickers.length > 0 && (
-                  <ul className="dropdown-list">
-                    {filteredTickers.map((ticker) => (
-                      <li
-                        key={ticker.ticker}
-                        onClick={() => handleSelectTicker(ticker.ticker)}
-                        className="dropdown-item"
-                      >
-                        {ticker.ticker} ({ticker.name})
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
             </div>
-            <div>
-              <label className="form-label">Montant</label>
-              <input
-                type="number"
-                name="amount"
-                value={formData.amount}
-                onChange={handleChange}
-                min="0.01"
-                step="0.01"
-                className="form-input"
-                required
-              />
-            </div>
-          </div>
+          )}
 
-          {/* (prix ou quantité) + frais */}
-          <div className="form-grid-2">
-            {formData.operation !== "dividend" ? (
+          {["buy", "sell"].includes(formData.operation) && (
+            <div className="form-grid-2">
               <div>
                 <label className="form-label">Prix de l'action</label>
                 <input
@@ -276,7 +318,23 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                   required
                 />
               </div>
-            ) : (
+              <div>
+                <label className="form-label">Frais/Commission</label>
+                <input
+                  type="number"
+                  name="fees"
+                  value={formData.fees}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  className="form-input"
+                />
+              </div>
+            </div>
+          )}
+
+          {formData.operation === "dividend" && (
+            <div className="form-grid-2">
               <div>
                 <label className="form-label">Quantité</label>
                 <input
@@ -289,38 +347,82 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                   className="form-input"
                 />
               </div>
-            )}
-            <div>
-              <label className="form-label">Frais/Commission</label>
-              <input
-                type="number"
-                name="fees"
-                value={formData.fees}
-                onChange={handleChange}
-                min="0"
-                step="0.01"
-                className="form-input"
-              />
+              <div>
+                <label className="form-label">Frais/Commission</label>
+                <input
+                  type="number"
+                  name="fees"
+                  value={formData.fees}
+                  onChange={handleChange}
+                  min="0"
+                  step="0.01"
+                  className="form-input"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* notes */}
-          <div className="form-block">
-            <label className="form-label">Notes</label>
-            <textarea
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
-              rows={3}
-              className="form-input"
-              placeholder="Notes facultatives"
-              maxLength={150}
-            />
-          </div>
+          {["deposit", "withdrawal", "interest"].includes(
+            formData.operation
+          ) && (
+            <>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Montant</label>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    min="0.01"
+                    step="0.01"
+                    className="form-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Frais/Commission</label>
+                  <input
+                    type="number"
+                    name="fees"
+                    value={formData.fees}
+                    onChange={handleChange}
+                    min="0"
+                    step="0.01"
+                    className="form-input"
+                  />
+                </div>
+              </div>
+              <div style={{ position: "relative" }}>
+                <label className="form-label">Devise</label>
+                <input
+                  type="text"
+                  value={searchCurrency}
+                  onChange={handleSearchChangeCurrency}
+                  placeholder="ex: (EUR, USD, ...)"
+                  className="form-input"
+                />
+                {filteredCurrency.length > 0 && (
+                  <ul className="dropdown-list">
+                    {filteredCurrency.map((cur) => (
+                      <li
+                        key={cur.code}
+                        onClick={() => handleSelectCurrency(cur.code)}
+                        className="dropdown-item"
+                      >
+                        {cur.code}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="form-footer">
             <div className="form-footer-left">
               <ExcelUploader
+                selectedPortfolioId={selectedPortfolioId}
                 onImportSuccess={() => {
                   setIsFormOpen(false);
                   setRefreshKey((prev) => prev + 1);
@@ -342,6 +444,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
           onEdit={handleEditTransaction}
           refreshKey={refreshKey}
           onRefresh={() => setRefreshKey((prev) => prev + 1)}
+          tickersInPortfolio={tickersInPortfolio}
         />
       )}
     </div>

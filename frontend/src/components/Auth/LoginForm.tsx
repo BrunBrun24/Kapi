@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../../api";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../../constants";
 import LoadingIndicator from "./LoadingIndicator";
-import "../../static/css/Auth/LoginForm.css";
+
+import "../../static/css/auth/LoginForm.css";
 
 const lowLetter = "abcdefghijklmnopqrstuvwxyz";
 const highLetter = lowLetter.toUpperCase();
