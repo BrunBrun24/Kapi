@@ -1,10 +1,10 @@
 import axios from "axios";
-import { ACCESS_TOKEN } from "./constants";
+import { ACCESS_TOKEN } from "@/constants";
 
-const apiUrl = "http://127.0.0.1:8000";
+const fallbackApiUrl = "http://192.168.1.34:8000";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : apiUrl,
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? fallbackApiUrl,
 });
 
 api.interceptors.request.use(

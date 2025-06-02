@@ -274,7 +274,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             "portfolio_ticker": portfolio_ticker,
             "operation": operation,
             "date": date,
-            "amount": amount,
+            "amount": round(amount, 2),
             "fees": fees,
             "stock_price": stock_price,
             "quantity": quantity,

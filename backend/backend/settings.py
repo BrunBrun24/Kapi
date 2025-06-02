@@ -33,7 +33,8 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # ou l'adresse de ton frontend
+    "http://localhost:3000",  # ou l'adresse de ton frontend
+    "http://192.168.1.34:3000"
 ]
 
 REST_FRAMEWORK = {

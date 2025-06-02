@@ -72,13 +72,13 @@ class PortfolioTransactionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortfolioTransaction
         fields = [
-            'portfolio_user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
+            'user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
             'amount', 'quantity', 'fees', 'currency'
         ]
-        read_only_fields = ['portfolio_user']
+        read_only_fields = ['user']
 
     def create(self, validated_data):
-        validated_data['portfolio_user'] = self.context['request'].user
+        validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
     def validate(self, data):
@@ -171,10 +171,10 @@ class PortfolioTransactionUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortfolioTransaction
         fields = [
-            'portfolio_user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
+            'user', 'portfolio', 'portfolio_ticker', 'operation', 'stock_price', 'date',
             'amount', 'quantity', 'fees', 'currency'
         ]
-        read_only_fields = ['portfolio_user']
+        read_only_fields = ['user']
 
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():

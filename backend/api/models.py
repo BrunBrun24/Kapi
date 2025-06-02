@@ -121,7 +121,7 @@ class PortfolioTransaction(models.Model):
         ('withdrawal', "Retrait"),
     ]
 
-    portfolio_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
     portfolio_ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE, blank=True, null=True)
     operation = models.CharField(max_length=10, choices=OPERATION_CHOICES)
@@ -137,5 +137,28 @@ class PortfolioTransaction(models.Model):
 
     @classmethod
     def get_user_portfolios(cls, user):
-        return cls.objects.filter(portfolio_user=user)
+        return cls.objects.filter(user=user)
 
+
+class PortfolioPerformance(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
+    calculated_at = models.DateTimeField(auto_now=True)
+
+    # Champs JSON pour stocker les métriques complexes
+    # dict: {string: pd.DataFrame (index:datetime.datetime)}
+    twr_by_ticker = models.JSONField()
+    net_price_by_ticker = models.JSONField()
+    gross_price_by_ticker = models.JSONField()
+    invested_by_ticker = models.JSONField()
+    sold_by_ticker = models.JSONField()
+    dividends_by_ticker = models.JSONField()
+
+    # Courbes globales
+    # pd.DataFrame (index:datetime.datetime)
+    portfolio_twr = models.JSONField()
+    net_portfolio_price = models.JSONField()
+    monthly_percentage = models.JSONField()
+    bank_balance = models.JSONField()
+    total_invested = models.JSONField()
+    cash = models.JSONField()
