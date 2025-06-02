@@ -470,11 +470,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     <td className="numeric">
                       {transaction.quantity !== 0 &&
                       transaction.quantity != null
-                        ? formatNumberWithSymbol(
-                            transaction.quantity,
-                            currencySymbols[transaction.ticker] ||
-                              transaction.currency
-                          )
+                        ? transaction.quantity
                         : "-"}
                     </td>
                     <td className="numeric">
@@ -619,8 +615,13 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel style={{ cursor: "pointer" }}>Annuler</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDeleteTransaction} style={{ cursor: "pointer" }}>
+              <AlertDialogCancel style={{ cursor: "pointer" }}>
+                Annuler
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteTransaction}
+                style={{ cursor: "pointer" }}
+              >
                 Supprimer
               </AlertDialogAction>
             </AlertDialogFooter>
