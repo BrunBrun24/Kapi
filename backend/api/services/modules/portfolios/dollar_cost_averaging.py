@@ -1,4 +1,4 @@
-from .base_Portfolio import BasePortfolio
+from api.services.modules.portfolios.base_portfolio import BasePortfolio
 import pandas as pd
 
 class DollarCostAveraging(BasePortfolio):
@@ -63,7 +63,7 @@ class DollarCostAveraging(BasePortfolio):
                 transaction["date"] = date
                 transaction["ticker"] = ticker
                 transaction["operation"] = "buy"
-                transaction["transaction_price"] = (amount * percentage / 100)
+                transaction["amount"] = (amount * percentage / 100)
 
                 result.append(transaction)
 

@@ -19,7 +19,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
-    AddPortfolioTickerView, UserTransactionsView, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
+    AddPortfolioTickerView, UserPortfolios, UserPortfoliosPerformance, UserTransactionsView, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
     CreateUserView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView, TickerListView
 )
 
@@ -50,11 +50,17 @@ urlpatterns = [
     path("api/portfolio-transaction/<int:pk>/update", UpdatePortfolioTransactionView.as_view()),
     path("api/upload-excel/transaction/", ExcelPortfolioTransactionUploadView.as_view()),
 
+    # Portefeuille Performance
+    path("api/user/portfolio/performance/", UserPortfoliosPerformance.as_view()),
+
     # Company
     # path('api/tickers/', TickerListView.as_view()),
 
     # Annexe
     path("api/currencies/", CurrencyListView.as_view()),
-    path("api/ticker/currency/", CurrencyTickerView.as_view())
+    path("api/ticker/currency/", CurrencyTickerView.as_view()),
+
+
+    path('api/user/portfolio/', UserPortfolios.as_view()),
 
 ]

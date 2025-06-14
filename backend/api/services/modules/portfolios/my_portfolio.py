@@ -6,15 +6,14 @@ import numpy as np
 
 class MyPortfolio(BasePortfolio):
 
-    def my_portfolio(self):
+    def my_portfolio(self, name_portfolio: str):
         """Cette méthode permet de simuler en fonction de différents portefeuilles, un investissement d'après les mêmes dates d'achats et de ventes dans mon portefeuille initiale"""
 
-        portfolio_name = "My Portfolio"
         cash = self.calculate_cash(self.transactions)
         print(cash)
         print(self.initial_invested_amount())
         cumulative_invested_amounts = self.investment_amount_evolution(self.transactions)
-        self.total_invested_amounts[portfolio_name] = cumulative_invested_amounts.sum(axis=1)
+        self.total_invested_amounts[name_portfolio] = cumulative_invested_amounts.sum(axis=1)
         self.tickers_prices = self.download_tickers_price([ticker for ticker in self.transactions["ticker"].dropna().unique() if pd.notna(ticker)], self.start_date, self.end_date)
 
         invested_amounts_tickers = self.weighted_average_purchase_price(self.transactions)
@@ -29,21 +28,21 @@ class MyPortfolio(BasePortfolio):
         ticker_percentage_evolution = self.calculate_percentage_evolution_tickers(money_evolution_tickers, cumulative_invested_amounts)
         portfolio_percentage_evolution = self.calculate_portfolio_percentage_change(gains_losses_evolution_portfolio, self.initial_invested_amount())
         
-        self.portfolio_twr[portfolio_name] = portfolio_percentage_evolution
-        self.portfolio_net_price[portfolio_name] = gains_losses_evolution_portfolio
-        self.ticker_twr[portfolio_name] = ticker_percentage_evolution
-        self.tickers_net_prices[portfolio_name] = gains_losses_evolution_tickers
-        self.tickers_gross_prices[portfolio_name] = money_evolution_tickers
-        self.portfolio_monthly_percentages[portfolio_name] = self.calculate_monthly_percentage_change(
+        self.portfolio_twr[name_portfolio] = portfolio_percentage_evolution
+        self.portfolio_net_price[name_portfolio] = gains_losses_evolution_portfolio
+        self.ticker_twr[name_portfolio] = ticker_percentage_evolution
+        self.tickers_net_prices[name_portfolio] = gains_losses_evolution_tickers
+        self.tickers_gross_prices[name_portfolio] = money_evolution_tickers
+        self.portfolio_monthly_percentages[name_portfolio] = self.calculate_monthly_percentage_change(
             money_evolution_tickers.sum(axis=1),
             self.transactions
         )
-        self.tickers_dividends[portfolio_name] = self.calculate_dividends()
-        self.tickers_funds_invested[portfolio_name] = cumulative_invested_amounts
-        self.tickers_invested_amounts[portfolio_name] = invested_amounts_tickers
-        self.tickers_sold_amounts[portfolio_name] = sales_evolution_tickers
-        self.bank_balance[portfolio_name] = (cash + money_evolution_portfolio)
-        self.cash[portfolio_name] = cash
+        self.tickers_dividends[name_portfolio] = self.calculate_dividends()
+        self.tickers_funds_invested[name_portfolio] = cumulative_invested_amounts
+        self.tickers_invested_amounts[name_portfolio] = invested_amounts_tickers
+        self.tickers_sold_amounts[name_portfolio] = sales_evolution_tickers
+        self.bank_balance[name_portfolio] = (cash + money_evolution_portfolio)
+        self.cash[name_portfolio] = cash
 
     def capital_gain_losses_composed(self, tickers_invested_amounts: pd.DataFrame, tickers_prices: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         assert isinstance(tickers_invested_amounts, pd.DataFrame), "tickers_invested_amounts doit être un DataFrame"

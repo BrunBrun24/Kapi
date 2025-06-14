@@ -6,10 +6,13 @@ from api.services.modules.portfolios.my_portfolio import MyPortfolio
 from api.services.modules.recuperation_donnees import DataRetrieval
 from django.contrib.auth import get_user_model
 
-class PortefeuilleBourse(DataRetrieval, MyPortfolio):
+from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAveraging
+
+class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
     def __init__(self, user_id: int, portfolio_id: int):
         self.user_id = user_id
         self.portfolio_id = portfolio_id
+        name_portfolio = Portfolio.objects.filter(id=portfolio_id).values("name").first()["name"]
         
         # Récupère les transactions avec les IDs de PortfolioTicker
         transactions = PortfolioTransaction.objects.filter(
@@ -29,7 +32,6 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio):
 
         # Convertit en DataFrame
         transactions_df = pd.DataFrame(transactions)
-        print(transactions_df)
 
         if (transactions_df.empty) or (transactions_df[transactions_df['operation'] == 'buy'].empty):
             self.save_portfolio_empty()
@@ -74,8 +76,68 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio):
         self.cash = pd.DataFrame(dtype=float)  # Cash disponible
         self.total_invested_amounts = pd.DataFrame(dtype=float)  # Évolution des montants investis
 
-        self.my_portfolio()
+        self.my_portfolio(name_portfolio)
+
+        portfolioPercentage = [
+            [{'CSSPX.MI': 100}, 'S&P 500']
+        ]
+        self.set_portfolio_allocation(portfolioPercentage)
+        self.dca()
+        
         self.save_portfolio_performance()
+
+    ################ A SUPPRIMER ################
+    def add_global_porfolio(self):
+        global_portfolio = Portfolio.objects.filter(user_id=self.user_id, name="My Portfolio").values().first()
+        name_portfolio = global_portfolio["name"]
+        
+        # Récupère les transactions avec les IDs de PortfolioTicker
+        transactions = PortfolioTransaction.objects.filter(
+            user=self.user_id,
+            portfolio=global_portfolio["id"],
+        ).values(
+            'id',
+            'portfolio_ticker_id',
+            'operation',
+            'date',
+            'amount',
+            'fees',
+            'stock_price',
+            'quantity',
+            'currency'
+        ).order_by("date")
+
+        # Convertit en DataFrame
+        transactions_df = pd.DataFrame(transactions)
+
+        if (transactions_df.empty) or (transactions_df[transactions_df['operation'] == 'buy'].empty):
+            self.save_portfolio_empty()
+            return
+
+        # Convertit les colonnes numériques en float
+        numeric_columns = ['amount', 'fees', 'stock_price', 'quantity']
+        transactions_df[numeric_columns] = transactions_df[numeric_columns].astype(float)
+
+        # Conversion explicite de la date et mise en index
+        transactions_df['date'] = pd.to_datetime(transactions_df['date'])
+        transactions_df.set_index('date', inplace=True)
+
+        # Mapping ticker depuis PortfolioTicker
+        ticker_mapping = {
+            pt.id: pt.ticker.ticker
+            for pt in PortfolioTicker.objects.filter(
+                id__in=transactions_df['portfolio_ticker_id'].dropna().unique()
+            ).select_related('ticker')
+        }
+
+        # Ajoute la colonne 'ticker'
+        transactions_df['ticker'] = transactions_df['portfolio_ticker_id'].map(ticker_mapping)
+
+        self.transactions = transactions_df
+        self.start_date = transactions_df.index[0]
+
+        self.my_portfolio(name_portfolio)
+
 
     def set_portfolio_allocation(self, portfolio_allocation: list):
         """
@@ -137,6 +199,47 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio):
 
         return df_clean.to_dict(orient="index")
 
+
+    @staticmethod
+    def convert_df_to_json(df: pd.DataFrame):
+        """
+        Transforme un DataFrame avec index datetime et colonnes de portefeuilles
+        en une liste de dictionnaires pour JSONField.
+
+        Exemple de DataFrame en entrée :
+                        My Portfolio  Another Portfolio
+        2025-06-10        994.033997         875.233444
+        2025-06-11        964.138217         885.456789
+
+        Résultat :
+        [
+            {'date': '2025-06-10', 'My Portfolio': 994.033997, 'Another Portfolio': 875.233444},
+            {'date': '2025-06-11', 'My Portfolio': 964.138217, 'Another Portfolio': 885.456789}
+        ]
+        """
+        # S'assurer que l'index est bien en datetime
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            df = df.copy()
+            df.index = pd.to_datetime(df.index)
+
+        df.fillna(0, inplace=True)
+
+        formatted_list = []
+        for date, row in df.iterrows():
+            entry = {'date': date.strftime('%Y-%m-%d')}
+            entry.update(row.to_dict())
+            formatted_list.append(entry)
+
+        return formatted_list
+
+    def convert_data_to_json(self, data: dict):
+        result = []
+        for portfolio, df in data.items():
+            result.append([portfolio, self.convert_df_to_json(df)])
+
+        return result
+
+
     def save_portfolio_performance(self):
         User = get_user_model()
         user_instance = User.objects.get(id=self.user_id)
@@ -146,19 +249,19 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio):
         user=user_instance,
         portfolio=portfolio_instance,
         defaults={
-            "twr_by_ticker": self.dataframe_to_clean_json_dict(self.ticker_twr),
-            "net_price_by_ticker": self.dataframe_to_clean_json_dict(self.tickers_net_prices),
-            "gross_price_by_ticker": self.dataframe_to_clean_json_dict(self.tickers_gross_prices),
-            "invested_by_ticker": self.dataframe_to_clean_json_dict(self.tickers_funds_invested),
-            "sold_by_ticker": self.dataframe_to_clean_json_dict(self.tickers_sold_amounts),
-            "dividends_by_ticker": self.dataframe_to_clean_json_dict(self.tickers_dividends),
+            "twr_by_ticker": self.convert_data_to_json(self.ticker_twr),
+            "net_price_by_ticker": self.convert_data_to_json(self.tickers_net_prices),
+            "gross_price_by_ticker": self.convert_data_to_json(self.tickers_gross_prices),
+            "invested_by_ticker": self.convert_data_to_json(self.tickers_funds_invested),
+            "sold_by_ticker": self.convert_data_to_json(self.tickers_sold_amounts),
+            "dividends_by_ticker": self.convert_data_to_json(self.tickers_dividends),
 
-            "portfolio_twr": self.dataframe_to_json_compatible(self.portfolio_twr),
-            "net_portfolio_price": self.dataframe_to_json_compatible(self.portfolio_net_price),
-            "monthly_percentage": self.dataframe_to_json_compatible(self.portfolio_monthly_percentages),
-            "bank_balance": self.dataframe_to_json_compatible(self.bank_balance),
-            "total_invested": self.dataframe_to_json_compatible(self.total_invested_amounts),
-            "cash": self.dataframe_to_json_compatible(self.cash),
+            "portfolio_twr": self.convert_df_to_json(self.portfolio_twr),
+            "net_portfolio_price": self.convert_df_to_json(self.portfolio_net_price),
+            "monthly_percentage": self.convert_df_to_json(self.portfolio_monthly_percentages),
+            "bank_balance": self.convert_df_to_json(self.bank_balance),
+            "total_invested": self.convert_df_to_json(self.total_invested_amounts),
+            "cash": self.convert_df_to_json(self.cash),
         }
     )
 

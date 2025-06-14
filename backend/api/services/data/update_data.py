@@ -1,6 +1,9 @@
+from datetime import datetime
 import os
 import django
 import sys
+
+import pandas as pd
 
 
 # Chemin vers le dossier racine du projet (là où se trouve manage.py)
@@ -13,75 +16,32 @@ from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerforman
 from api.services.modules.portefeuille_bourse import PortefeuilleBourse
 
 
-users = list(Portfolio.objects.filter().values())
+users = list(Portfolio.objects.values())
 print(users)
 
-# for portfolio in users:
-#     portefeuille = PortefeuilleBourse(user_id=portfolio["user_id"], portfolio_id=portfolio['id'])
+for portfolio in users:
+    portefeuille = PortefeuilleBourse(user_id=portfolio["user_id"], portfolio_id=portfolio['id'])
 
+# user_portfolios = list(
+#     Portfolio.objects
+#     .filter(user=1)
+#     .exclude(name="My Portfolio")
+#     .values()
+# )
+# print(user_portfolios)
 
-import pandas as pd
-from typing import Any
+# all_transactions = pd.DataFrame()
 
+# for portfolio in user_portfolios:
+#     transactions = pd.DataFrame(PortfolioTransaction.objects.filter(
+#         user_id=portfolio["user_id"],
+#         portfolio_id=portfolio["id"]
+#     ).order_by("date").values())
+    
+#     all_transactions = pd.concat([all_transactions, transactions], ignore_index=True)
+#     print(transactions)
+#     print()
 
-@staticmethod
-def _deserialize_value(value: Any) -> Any:
-    # Remettre les types utiles si besoin (ex : float/int ou datetime)
-    if isinstance(value, str):
-        try:
-            return pd.to_datetime(value)
-        except ValueError:
-            return value
-    return value
-
-def deserialize_simple_dataframe(serialized_df: dict[str, dict[str, Any]]) -> pd.DataFrame:
-    data = {
-        idx: {
-            col: _deserialize_value(val)
-            for col, val in row.items()
-        }
-        for idx, row in serialized_df.items()
-    }
-    df = pd.DataFrame.from_dict(data, orient="index")
-    df.index.name = None
-    return df
-
-
-def json_dict_to_dataframe_dict(json_data):
-    result = {}
-    for key, data in json_data.items():
-        df = pd.DataFrame.from_dict(data, orient="index")
-
-        # Tenter de parser l’index en datetime si possible
-        try:
-            df.index = pd.to_datetime(df.index)
-        except Exception:
-            pass
-
-        result[key] = df
-    return result
-
-def json_to_dataframe(data: dict) -> pd.DataFrame:
-    """
-    Convertit un dict JSON-compatible (issu de la DB) en DataFrame.
-    L'index est reconverti en datetime.
-    """
-    df = pd.DataFrame.from_dict(data, orient="index")
-    df.index = pd.to_datetime(df.index)
-    return df
-
-
-# Récupération de la performance d’un utilisateur
-performance = PortfolioPerformance.objects.filter(user=1).first()
-
-if performance:
-    portfolio_twr = json_to_dataframe(performance.portfolio_twr)
-    print(portfolio_twr)
-
-    ticker_twr = json_dict_to_dataframe_dict(performance.twr_by_ticker)
-    print(ticker_twr)
-else:
-    print("Aucune performance trouvée pour l'utilisateur.")
-
-
-
+# all_transactions['date'] = pd.to_datetime(all_transactions['date'])
+# all_transactions = all_transactions.sort_values(by='date')
+# print(all_transactions)

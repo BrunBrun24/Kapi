@@ -16,6 +16,7 @@ from api.utils import html_error_response
 from .models import (
     CURRENCY_CHOICES,
     Company,
+    PortfolioPerformance,
     StockPrice,
     UserPreference,
     Portfolio,
@@ -211,7 +212,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
                 quantity = round(amount / stock_price, 6)
                 currency = None
                 try:
-                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], request.user).pk
+                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], data["portfolio"], request.user).pk
                 except PortfolioTicker.DoesNotExist:
                     return Response({"detail": "Ticker not found in user's portfolio."}, status=status.HTTP_400_BAD_REQUEST)
             elif operation == "dividend":
@@ -219,7 +220,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
                 stock_price = None
                 currency = None
                 try:
-                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], request.user).pk
+                    portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], data["portfolio"], request.user).pk
                 except PortfolioTicker.DoesNotExist:
                     return Response({"detail": "Ticker not found in user's portfolio."}, status=status.HTTP_400_BAD_REQUEST)
             elif operation == "interet":
@@ -277,7 +278,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             "amount": round(amount, 2),
             "fees": fees,
             "stock_price": stock_price,
-            "quantity": quantity,
+            "quantity": round(quantity, 6),
             "currency": currency,
         }
 
@@ -289,9 +290,10 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             print("❌ Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def get_portfolio_ticker(self, ticker, user):
+    def get_portfolio_ticker(self, ticker, portfolio_id, user):
         return PortfolioTicker.objects.get(
             ticker=ticker,
+            portfolio_id=portfolio_id,
             portfolio__user=user
         )
 
@@ -373,6 +375,7 @@ class UpdatePortfolioTransactionView(UpdateAPIView):
             try:
                 portfolio_ticker = PortfolioTicker.objects.get(
                     ticker=data['portfolio_ticker'],
+                    portfolio_id=data['portfolio'],
                     portfolio__user=request.user
                 )
             except PortfolioTicker.DoesNotExist:
@@ -486,6 +489,7 @@ class ExcelPortfolioTransactionUploadView(APIView):
                 try:
                     portfolio_ticker = PortfolioTicker.objects.get(
                         ticker=ticker,
+                        portfolio_id=portfolio,
                         portfolio__user=request.user
                     )
                 except PortfolioTicker.DoesNotExist:
@@ -556,6 +560,121 @@ class ExcelPortfolioTransactionUploadView(APIView):
                 instance.save()
 
         return Response({"importées": len(to_create) + len(to_update)}, status=status.HTTP_201_CREATED)
+
+
+# Portefeuille Performance
+class UserPortfoliosPerformanceAVANT(APIView):
+    """
+    Récupère les données de performance de tous les portefeuilles d'un utilisateur connecté
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        # Récupère le portefeuille global de l'utilisateur
+        portfolio_id = Portfolio.objects.filter(user=user, name="My Portfolio").values_list("id", flat=True).first()
+        # Récupère les perfomrances du portefeuille global de l'utilisateur
+        performances = PortfolioPerformance.objects.filter(user=user, portfolio_id=portfolio_id).first()
+
+        if performances is None:
+            return Response(
+                {"detail": "Aucune performance trouvée pour l'utilisateur."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        portfolios_data = Portfolio.objects.filter(user=user).exclude(name="My Portfolio").values("id", "name")
+        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
+
+        result = {}
+        result["twr_by_ticker"] = performances.twr_by_ticker
+        result["net_price_by_ticker"] = performances.net_price_by_ticker
+        result["gross_price_by_ticker"] = performances.gross_price_by_ticker
+        result["invested_by_ticker"] = performances.invested_by_ticker
+        result["sold_by_ticker"] = performances.sold_by_ticker
+        result["dividends_by_ticker"] = performances.dividends_by_ticker
+
+        result["portfolio_twr"] = performances.portfolio_twr
+        result["net_portfolio_price"] = performances.net_portfolio_price
+        result["monthly_percentage"] = performances.monthly_percentage
+        result["bank_balance"] = performances.bank_balance
+        result["total_invested"] = performances.total_invested
+        result["cash"] = performances.cash
+
+        result["portfolios"] = portfolios
+
+        print(result["portfolios"])
+
+        # print(result["portfolio_twr"])
+
+        ####### A SUPPRIMER ET LE FAIRE DANS LE FRONT-END ########
+        for key, elements in result.items():
+            if key in ["portfolio_twr", "net_portfolio_price", "monthly_percentage", "bank_balance", "total_invested", "cash"]:
+                for ele in elements:
+                    for key in ele.keys():
+                        if key != "date" and isinstance(ele[key], float):
+                            ele[key] = round(ele[key], 2)
+
+        return Response(result)
+
+class UserPortfoliosPerformance(APIView):
+    """
+    Récupère les données de performance de tous les portefeuilles d'un utilisateur connecté
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        # Récupère le portefeuille global de l'utilisateur
+        portfolios = list(Portfolio.objects.filter(user=user).values())
+
+        portfolios_data = Portfolio.objects.filter(user=user).values("id", "name")
+        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
+
+        result = {}
+        for portfolio in portfolios:
+            portfolio_name = portfolio["name"]
+            result[portfolio["name"]] = {}
+            # Récupère les perfomrances du portefeuille
+            performances = PortfolioPerformance.objects.filter(user=user, portfolio_id=portfolio["id"]).first()
+
+            result[portfolio_name]["twr_by_ticker"] = performances.twr_by_ticker
+            result[portfolio_name]["net_price_by_ticker"] = performances.net_price_by_ticker
+            result[portfolio_name]["gross_price_by_ticker"] = performances.gross_price_by_ticker
+            result[portfolio_name]["invested_by_ticker"] = performances.invested_by_ticker
+            result[portfolio_name]["sold_by_ticker"] = performances.sold_by_ticker
+            result[portfolio_name]["dividends_by_ticker"] = performances.dividends_by_ticker
+
+            result[portfolio_name]["portfolio_twr"] = performances.portfolio_twr
+            result[portfolio_name]["net_portfolio_price"] = performances.net_portfolio_price
+            result[portfolio_name]["monthly_percentage"] = performances.monthly_percentage
+            result[portfolio_name]["bank_balance"] = performances.bank_balance
+            result[portfolio_name]["total_invested"] = performances.total_invested
+            result[portfolio_name]["cash"] = performances.cash
+
+            ####### A SUPPRIMER ET LE FAIRE DANS LE FRONT-END ########
+            for key, elements in result[portfolio_name].items():
+                if key in ["portfolio_twr", "net_portfolio_price", "monthly_percentage", "bank_balance", "total_invested", "cash"]:
+                    for ele in elements:
+                        for key in ele.keys():
+                            if key != "date" and isinstance(ele[key], float):
+                                ele[key] = round(ele[key], 2)
+
+        
+        # print(result["My Portfolio"]["total_invested"])
+        return Response(result)
+
+class UserPortfolios(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        portfolios_data = Portfolio.objects.filter(user=user).values("id", "name")
+        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
+
+        return Response(portfolios)
+
+
 
 
 

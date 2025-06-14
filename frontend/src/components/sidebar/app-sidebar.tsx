@@ -57,16 +57,12 @@ const data = {
       isActive: true,
       items: [
         {
-          title: "Dashborad",
-          url: "/portfolio/dashboard",
+          title: "Analyses",
+          url: "/portfolio/analytics",
         },
         {
           title: "Transactions",
           url: "/portfolio/transactions",
-        },
-        {
-          title: "Performance",
-          url: "/portfolio/performance",
         },
       ],
     },

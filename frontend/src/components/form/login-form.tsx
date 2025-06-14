@@ -108,7 +108,7 @@ export function LoginRegisterForm({
         document.cookie = `refresh_token=${res.data.refresh}; path=/; secure; SameSite=Lax`;
 
         // 3. Redirection
-        navigate.push("/portfolio/dashboard");
+        navigate.push("/portfolio/analytics");
       } else {
         navigate.push("/login");
       }
