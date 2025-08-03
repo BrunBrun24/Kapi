@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 import django
 import sys
@@ -16,32 +15,11 @@ from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerforman
 from api.services.modules.portefeuille_bourse import PortefeuilleBourse
 
 
-users = list(Portfolio.objects.values())
+name = "trade republic"
+name = "all"
+users = [u for u in Portfolio.objects.values() if u["name"].lower() == name]
+users = [u for u in Portfolio.objects.values() if u["name"].lower() != "name"]
 print(users)
 
 for portfolio in users:
     portefeuille = PortefeuilleBourse(user_id=portfolio["user_id"], portfolio_id=portfolio['id'])
-
-# user_portfolios = list(
-#     Portfolio.objects
-#     .filter(user=1)
-#     .exclude(name="My Portfolio")
-#     .values()
-# )
-# print(user_portfolios)
-
-# all_transactions = pd.DataFrame()
-
-# for portfolio in user_portfolios:
-#     transactions = pd.DataFrame(PortfolioTransaction.objects.filter(
-#         user_id=portfolio["user_id"],
-#         portfolio_id=portfolio["id"]
-#     ).order_by("date").values())
-    
-#     all_transactions = pd.concat([all_transactions, transactions], ignore_index=True)
-#     print(transactions)
-#     print()
-
-# all_transactions['date'] = pd.to_datetime(all_transactions['date'])
-# all_transactions = all_transactions.sort_values(by='date')
-# print(all_transactions)

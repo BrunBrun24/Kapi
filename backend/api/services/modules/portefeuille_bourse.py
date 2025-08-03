@@ -1,18 +1,21 @@
+from collections import defaultdict
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerformance, Portfolio
 from api.services.modules.portfolios.my_portfolio import MyPortfolio
-from api.services.modules.recuperation_donnees import DataRetrieval
 from django.contrib.auth import get_user_model
+import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAveraging
+from api.services.modules.portfolios.replication import Replication
 
-class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
-    def __init__(self, user_id: int, portfolio_id: int):
+class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
+    def __init__(self, user_id: int, portfolio_id: int, start_date: datetime = None, tickers_valuations: dict = {}):
         self.user_id = user_id
         self.portfolio_id = portfolio_id
-        name_portfolio = Portfolio.objects.filter(id=portfolio_id).values("name").first()["name"]
+        portfolio_name  = Portfolio.objects.filter(id=portfolio_id).values("name").first()["name"]
         
         # Récupère les transactions avec les IDs de PortfolioTicker
         transactions = PortfolioTransaction.objects.filter(
@@ -55,89 +58,120 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
 
         # Ajoute la colonne 'ticker'
         transactions_df['ticker'] = transactions_df['portfolio_ticker_id'].map(ticker_mapping)
+        # Ajuster les quantités en fonction des splits
+        self.ajuster_quantites_splits(transactions_df)
 
         self.transactions = transactions_df
 
         self.start_date = transactions_df.index[0]
         self.end_date = datetime.today()
 
-        self.tickers_invested_amounts = {}  # Montants investis par action
-        self.tickers_sold_amounts = {}  # Montants obtenus lors des ventes
-        self.ticker_twr = {}  # Time-Weighted Return par action
-        self.tickers_net_prices = {}  # Prix net des actions
-        self.tickers_gross_prices = {}  # Prix brut des actions
-        self.tickers_funds_invested = {}  # Fonds investis par action
+        self.tickers_invested_amounts = {}
+        self.tickers_sold_amounts = {}
+        self.tickers_twr = {}
+        self.tickers_gain = {}
+        self.tickers_valuation = {}
+        self.ticker_invested_amounts = {}
         self.tickers_dividends = {}
+        self.tickers_pru = {}
 
-        self.portfolio_twr = pd.DataFrame(dtype=float)  # Performance pondérée dans le temps du portefeuille
-        self.portfolio_net_price = pd.DataFrame(dtype=float)  # Prix net du portefeuille
-        self.portfolio_monthly_percentages = pd.DataFrame(dtype=float)  # Pourcentages mensuels du portefeuille
-        self.bank_balance = pd.DataFrame(dtype=float)  # Solde du compte bancaire
-        self.cash = pd.DataFrame(dtype=float)  # Cash disponible
-        self.total_invested_amounts = pd.DataFrame(dtype=float)  # Évolution des montants investis
+        self.portfolio_twr = pd.DataFrame(dtype=float)
+        self.portfolio_gain = pd.DataFrame(dtype=float)
+        self.portfolio_monthly_percentages = pd.DataFrame(dtype=float)
+        self.portfolio_valuation = pd.DataFrame(dtype=float)
+        self.portfolio_invested_amounts = pd.DataFrame(dtype=float)
+        self.portfolio_cash = pd.DataFrame(dtype=float)
 
-        self.my_portfolio(name_portfolio)
+        self.portfolio_fees = pd.DataFrame(dtype=float)
+        self.portfolio_cagr = {}
+        self.portfolio_dividend_yield = {}
+        self.portfolio_dividend_earn = {}
 
-        portfolioPercentage = [
-            [{'CSSPX.MI': 100}, 'S&P 500']
+        if start_date is not None:
+            self.transactions = self.set_transaction_with_date(transactions_df, start_date, tickers_valuations)
+            self.start_date = self.transactions.index[0]
+            
+        self.my_portfolio(portfolio_name)
+
+        portfolio_percentage = [
+            [{'SPY': 100}, 'S&P 500'],
+            [{'NQ=F': 100}, 'Nasdaq 100'],
+            [{'URTH': 100}, 'MSCI WORLD'],
+            [{'^FCHI': 100}, 'CAC 40'],
         ]
-        self.set_portfolio_allocation(portfolioPercentage)
+        self.set_portfolio_allocation(portfolio_percentage)
         self.dca()
+
+        if start_date is None:
+            self.save_portfolio_performance()
+
+    @staticmethod
+    def ajuster_quantites_splits(transactions_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Ajuste les colonnes 'quantity' et 'stock_price' d'un DataFrame de transactions
+        en fonction des splits ayant eu lieu après chaque transaction.
+
+        :param transactions_df: DataFrame contenant une colonne 'ticker', 'quantity', 'stock_price' et un index datetime
+        :return: DataFrame avec les colonnes 'quantity' et 'stock_price'
+        """
         
-        self.save_portfolio_performance()
+        def get_splits(ticker):
+            try:
+                splits = yf.Ticker(ticker).splits
+                return ticker, splits.tz_convert(None) if not splits.empty else None
+            except Exception as e:
+                print(f"Erreur lors de la récupération des splits pour {ticker} : {e}")
+                return ticker, None
 
-    ################ A SUPPRIMER ################
-    def add_global_porfolio(self):
-        global_portfolio = Portfolio.objects.filter(user_id=self.user_id, name="My Portfolio").values().first()
-        name_portfolio = global_portfolio["name"]
-        
-        # Récupère les transactions avec les IDs de PortfolioTicker
-        transactions = PortfolioTransaction.objects.filter(
-            user=self.user_id,
-            portfolio=global_portfolio["id"],
-        ).values(
-            'id',
-            'portfolio_ticker_id',
-            'operation',
-            'date',
-            'amount',
-            'fees',
-            'stock_price',
-            'quantity',
-            'currency'
-        ).order_by("date")
+        # Supprimer les lignes sans ticker et obtenir les tickers uniques
+        unique_tickers = transactions_df['ticker'].dropna().unique()
 
-        # Convertit en DataFrame
-        transactions_df = pd.DataFrame(transactions)
+        # Utiliser un ThreadPool pour paralléliser les appels à yfinance
+        splits_dict = {}
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(get_splits, ticker): ticker for ticker in unique_tickers}
+            for future in as_completed(futures):
+                ticker, splits = future.result()
+                if splits is not None:
+                    splits_dict[ticker] = splits
 
-        if (transactions_df.empty) or (transactions_df[transactions_df['operation'] == 'buy'].empty):
-            self.save_portfolio_empty()
-            return
+        # Fonction d'ajustement pour une seule ligne
+        def ajuster_ligne(row):
+            ticker = row['ticker']
+            date_transaction = row.name
+            quantite_initiale = row['quantity']
+            prix_initial = row['stock_price']
 
-        # Convertit les colonnes numériques en float
-        numeric_columns = ['amount', 'fees', 'stock_price', 'quantity']
-        transactions_df[numeric_columns] = transactions_df[numeric_columns].astype(float)
+            if ticker not in splits_dict:
+                return pd.Series({
+                    'quantity': quantite_initiale,
+                    'stock_price': prix_initial
+                })
 
-        # Conversion explicite de la date et mise en index
-        transactions_df['date'] = pd.to_datetime(transactions_df['date'])
-        transactions_df.set_index('date', inplace=True)
+            splits_ticker = splits_dict[ticker]
+            splits_apres = splits_ticker[splits_ticker.index > date_transaction]
 
-        # Mapping ticker depuis PortfolioTicker
-        ticker_mapping = {
-            pt.id: pt.ticker.ticker
-            for pt in PortfolioTicker.objects.filter(
-                id__in=transactions_df['portfolio_ticker_id'].dropna().unique()
-            ).select_related('ticker')
-        }
+            facteur_split = splits_apres.prod() if not splits_apres.empty else 1.0
 
-        # Ajoute la colonne 'ticker'
-        transactions_df['ticker'] = transactions_df['portfolio_ticker_id'].map(ticker_mapping)
+            return pd.Series({
+                'quantity': quantite_initiale * facteur_split,
+                'stock_price': prix_initial / facteur_split
+            })
 
-        self.transactions = transactions_df
-        self.start_date = transactions_df.index[0]
+        # Appliquer les ajustements
+        ajustements = transactions_df.apply(
+            lambda row: ajuster_ligne(row) if pd.notna(row['ticker']) else pd.Series({
+                'quantity': row['quantity'],
+                'stock_price': row['stock_price']
+            }),
+            axis=1
+        )
 
-        self.my_portfolio(name_portfolio)
+        # Fusionner les résultats dans le DataFrame original
+        transactions_df['quantity'] = ajustements['quantity']
+        transactions_df['stock_price'] = ajustements['stock_price']
 
+        return transactions_df
 
     def set_portfolio_allocation(self, portfolio_allocation: list):
         """
@@ -159,9 +193,7 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
                 assert isinstance(ticker, str), f"Chaque clé (ticker) doit être une chaîne, mais '{ticker}' ne l'est pas."
                 assert isinstance(percentage, (int, float)), f"Chaque valeur (pourcentage) doit être un nombre, mais '{percentage}' ne l'est pas."
 
-        self.portfolio_allocation = portfolio_allocation
-
-        all_tickers = sorted(set([ticker for portfolio in self.portfolio_allocation for ticker in portfolio[0].keys()]))
+        all_tickers = sorted(set([ticker for portfolio in portfolio_allocation for ticker in portfolio[0].keys()]))
         initial_tickers = sorted(list(self.tickers_prices.columns))
         new_tickers = [ticker for ticker in all_tickers if ticker not in initial_tickers]
 
@@ -169,36 +201,65 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
         self.tickers_prices = pd.concat([self.tickers_prices, new_tickers_prices], axis=1)
 
     @staticmethod
-    def dataframe_to_clean_json_dict(dataframes_dict):
-        result = {}
-        for key, df in dataframes_dict.items():
-            # On s'assure que l'index est une date en string ISO
-            df = df.copy()
-            df.index = df.index.astype(str)
+    def set_transaction_with_date(transactions_df: pd.DataFrame, start_date: datetime, tickers_valuations: dict) -> pd.DataFrame:
+        # S'assurer que l'index est bien de type datetime
+        if not isinstance(transactions_df.index, pd.DatetimeIndex):
+            transactions_df.index = pd.to_datetime(transactions_df.index)
 
-            # Remplacer tous les NaN/NaT/inf par None
-            df_clean = df.replace([np.nan, np.inf, -np.inf], None)
+        # Filtrer les transactions à partir de la date de départ
+        transactions_df = transactions_df[transactions_df.index >= start_date]
 
-            # Conversion en dict
-            result[key] = df_clean.to_dict(orient="index")
-        return result
+        new_rows = []
 
-    @staticmethod
-    def dataframe_to_json_compatible(df: pd.DataFrame) -> dict:
-        """
-        Convertit un DataFrame en un dict JSON-compatible.
-        L'index est converti en chaînes ISO, les valeurs en float/int ou null.
-        """
-        df_clean = df.copy()
+        for ticker, valuation in tickers_valuations.items():
+            date_lookup = start_date - timedelta(days=1)
+            date_str = date_lookup.strftime('%Y-%m-%d')
 
-        # Forcer l'index en string (format ISO recommandé)
-        df_clean.index = df_clean.index.map(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else str(x))
+            try:
+                data = yf.download(ticker, start=date_str, end=start_date.strftime('%Y-%m-%d'), auto_adjust=True, progress=False)
+                if data.empty:
+                    print(f"Aucune donnée trouvée pour {ticker} à la date {date_str}")
+                    continue
 
-        # Nettoyage des NaN/inf
-        df_clean = df_clean.round(6).astype(object).where(pd.notnull(df_clean), None)
+                stock_price = data['Close'].iloc[0].item()
+                quantity = float(valuation) / stock_price
 
-        return df_clean.to_dict(orient="index")
+                new_row = {
+                    'id': None,
+                    'portfolio_ticker_id': None,
+                    'operation': 'buy',
+                    'amount': float(valuation),
+                    'fees': 0.0,
+                    'stock_price': stock_price,
+                    'quantity': quantity,
+                    'currency': None,
+                    'ticker': ticker
+                }
 
+                new_rows.append((start_date, new_row))
+
+            except Exception as e:
+                print(f"Erreur lors du traitement du ticker {ticker}: {e}")
+
+        # Créer un DataFrame avec les mêmes colonnes que transactions_df
+        if new_rows:
+            new_df = pd.DataFrame(
+                [row for _, row in new_rows],
+                index=[date for date, _ in new_rows],
+                columns=transactions_df.columns  # Assure la même structure
+            )
+            new_df.index.name = 'date'
+
+            # Supprimer les colonnes entièrement vides pour éviter les warnings
+            new_df = new_df.dropna(axis=1, how='all')
+
+            # Fusionner et trier
+            transactions_df = pd.concat([new_df, transactions_df]).sort_index()
+
+        # Trier le DataFrame final par ordre chronologique sur l'index (qui contient les dates)
+        transactions_df = transactions_df.sort_index()
+
+        return transactions_df
 
     @staticmethod
     def convert_df_to_json(df: pd.DataFrame):
@@ -239,6 +300,23 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
 
         return result
 
+    @staticmethod
+    def convert_data_monthly_percentage_to_json(df: pd.DataFrame):
+        # ➤ Assure que l'index est en datetime
+        if not pd.api.types.is_datetime64_any_dtype(df.index):
+            df.index = pd.to_datetime(df.index)
+
+        # Transformation vers dictionnaire structuré
+        result = defaultdict(lambda: defaultdict(dict))
+
+        for date, row in df.iterrows():
+            year = str(date.year)
+            month_abbr = date.strftime("%b")  # "Jan", "Feb", etc.
+            for col in df.columns:
+                result[col][year][month_abbr] = row[col]
+
+        # ➤ Conversion en dict Python simple (pas defaultdict)
+        return {k: dict(v) for k, v in result.items()}
 
     def save_portfolio_performance(self):
         User = get_user_model()
@@ -249,19 +327,26 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
         user=user_instance,
         portfolio=portfolio_instance,
         defaults={
-            "twr_by_ticker": self.convert_data_to_json(self.ticker_twr),
-            "net_price_by_ticker": self.convert_data_to_json(self.tickers_net_prices),
-            "gross_price_by_ticker": self.convert_data_to_json(self.tickers_gross_prices),
-            "invested_by_ticker": self.convert_data_to_json(self.tickers_funds_invested),
-            "sold_by_ticker": self.convert_data_to_json(self.tickers_sold_amounts),
-            "dividends_by_ticker": self.convert_data_to_json(self.tickers_dividends),
+            "tickers_invested_amounts": self.convert_data_to_json(self.tickers_invested_amounts),
+            "tickers_sold_amounts": self.convert_data_to_json(self.tickers_sold_amounts),
+            "tickers_twr": self.convert_data_to_json(self.tickers_twr),
+            "tickers_gain": self.convert_data_to_json(self.tickers_gain),
+            "tickers_valuation": self.convert_data_to_json(self.tickers_valuation),
+            "ticker_invested_amounts": self.convert_data_to_json(self.ticker_invested_amounts),
+            "tickers_dividends": self.convert_data_to_json(self.tickers_dividends),
+            "tickers_pru": self.convert_data_to_json(self.tickers_pru),
 
             "portfolio_twr": self.convert_df_to_json(self.portfolio_twr),
-            "net_portfolio_price": self.convert_df_to_json(self.portfolio_net_price),
-            "monthly_percentage": self.convert_df_to_json(self.portfolio_monthly_percentages),
-            "bank_balance": self.convert_df_to_json(self.bank_balance),
-            "total_invested": self.convert_df_to_json(self.total_invested_amounts),
-            "cash": self.convert_df_to_json(self.cash),
+            "portfolio_gain": self.convert_df_to_json(self.portfolio_gain),
+            "portfolio_monthly_percentages": self.convert_data_monthly_percentage_to_json(self.portfolio_monthly_percentages),
+            "portfolio_valuation": self.convert_df_to_json(self.portfolio_valuation),
+            "portfolio_invested_amounts": self.convert_df_to_json(self.portfolio_invested_amounts),
+            "portfolio_cash": self.convert_df_to_json(self.portfolio_cash),
+            "portfolio_fees": self.convert_df_to_json(self.portfolio_fees),
+
+            "portfolio_cagr": self.portfolio_cagr,
+            "portfolio_dividend_yield": self.portfolio_dividend_yield,
+            "portfolio_dividend_earn": self.portfolio_dividend_earn,
         }
     )
 
@@ -273,18 +358,30 @@ class PortefeuilleBourse(DataRetrieval, MyPortfolio, DollarCostAveraging):
         PortfolioPerformance.objects.update_or_create(
         user=user_instance,
         portfolio=portfolio_instance,
-        defaults={
-            "twr_by_ticker": {},
-            "net_price_by_ticker": {},
-            "gross_price_by_ticker": {},
-            "invested_by_ticker": {},
-            "sold_by_ticker": {},
-            "dividends_by_ticker": {},
+        defaults = {
+            "tickers_invested_amounts": {},
+            "tickers_sold_amounts": {},
+            "tickers_twr": {},
+            "tickers_gain": {},
+            "tickers_valuation": {},
+            "ticker_invested_amounts": {},
+            "tickers_dividends": {},
+            "tickers_pru": {},
+
             "portfolio_twr": {},
-            "net_portfolio_price": {},
-            "monthly_percentage": {},
-            "bank_balance": {},
-            "total_invested": {},
-            "cash": {},
+            "portfolio_gain": {},
+            "portfolio_monthly_percentages": {},
+            "portfolio_valuation": {},
+            "portfolio_invested_amounts": {},
+            "portfolio_cash": {},
+
+            "portfolio_fees": {},
+            "portfolio_cagr": {},
+            "portfolio_dividend_yield": {},
+            "portfolio_dividend_earn": {},
         }
     )
+
+    def get_twr(self) -> list:
+        return self.convert_df_to_json(self.portfolio_twr)
+    

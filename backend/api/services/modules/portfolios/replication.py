@@ -1,98 +1,115 @@
-from .base_Portfolio import BasePortfolio
+from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
 import pandas as pd
 
 class Replication(BasePortfolio):
         
-    def ReplicationDeMonPortefeuille(self):
+    def replication_my_portfolio(self):
         """Cette méthode permet de simuler en fonction de différents portefeuilles, un investissement d'après les mêmes dates d'achats et de ventes dans mon portefeuille initiale"""
 
-        prixTickers = self.prixTickers.copy()
+        for portfolio in self.portfolio_allocation:
+            portfolio_name = portfolio[-1] + " Réplication"
+            tickers = list(portfolio[0].keys())
+            tickers_prices = self.tickers_prices.loc[:, self.tickers_prices.columns.intersection(tickers)]
+            portfolio_transactions = self.created_transactions(portfolio)
 
-        for portfolio in self.portfolioPercentage:
-            nomPortefeuille = portfolio[-1] + " Réplication"
-            tickers = [ticker for ticker in portfolio[0].keys()]
-            prixTickersFiltree = prixTickers.loc[:, prixTickers.columns.intersection(tickers)]
+            # Tickers
+            ticker_invested_amounts = self.tickers_investment_amount_evolution(portfolio_transactions)
+            tickers_pru = self.calculate_pru(portfolio_transactions, ticker_invested_amounts)
+            tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(ticker_invested_amounts, tickers_pru, tickers_prices)
 
-            montantsInvestisTickers, evolutionVentesTickers, montantsInvestisCumules = self.CalculerPrixMoyenPondereAchatReplicationDeMonPortefeuille(prixTickersFiltree, portfolio[0])
+            # Portefeuille
+            portfolio_valuation = tickers_valuation.sum(axis=1)
+            portfolio_realized_gains_losses = self.compute_plus_value_evolution(portfolio_transactions, ticker_invested_amounts)["plus_value_cumulative"]
+            portfolio_gain = tickers_gain.sum(axis=1) + portfolio_realized_gains_losses
+            # L'argent investi correspond à l'argent investi dans les tickers en enlevant les plus et moins values réalisées
+            invested_money = (ticker_invested_amounts.sum(axis=1).iloc[-1] - portfolio_realized_gains_losses.iloc[-1])
+            portfolio_gain_pct = self.calculate_portfolio_percentage_change(portfolio_gain, invested_money)
 
-            # Calcul des montants
-            evolutionArgentsInvestisTickers, evolutionGainsPertesTickers = self.CalculerPlusMoinsValueCompose(montantsInvestisTickers, prixTickersFiltree)
-            evolutionArgentsInvestisPortefeuille = evolutionArgentsInvestisTickers.sum(axis=1)
-            evolutionGainsPertesPortefeuille = evolutionGainsPertesTickers.sum(axis=1)
+            
+            self.tickers_twr[portfolio_name] = tickers_gain_pct
+            self.tickers_gain[portfolio_name] = tickers_gain
+            self.tickers_valuation[portfolio_name] = tickers_valuation
+            self.tickers_dividends[portfolio_name] = self.calculate_dividends_evolution(tickers_valuation, tickers_prices)
+            self.ticker_invested_amounts[portfolio_name] = ticker_invested_amounts
+            self.tickers_pru[portfolio_name] = tickers_pru
 
-            # Calcul des pourcentages
-            evolutionPourcentageTickers = self.CalculerEvolutionPourcentageTickers(evolutionArgentsInvestisTickers, montantsInvestisCumules)
-            evolutionPourcentagePortefeuille = self.CalculerEvolutionPourcentagePortefeuille(evolutionGainsPertesPortefeuille, montantsInvestisCumules.iloc[-1].sum())
+            self.portfolio_twr[portfolio_name] = portfolio_gain_pct
+            self.portfolio_gain[portfolio_name] = portfolio_gain
+            self.portfolio_valuation[portfolio_name] = portfolio_valuation
+            self.portfolio_invested_amounts[portfolio_name] = ticker_invested_amounts.sum(axis=1)
+            self.portfolio_monthly_percentages[portfolio_name] = self.calculate_monthly_percentage_change(
+                portfolio_valuation,
+                portfolio_transactions
+            )
 
-            # On stock les DataFrames
-            self.portefeuilleTWR[nomPortefeuille] = evolutionPourcentagePortefeuille
-            self.prixNetPortefeuille[nomPortefeuille] = evolutionGainsPertesPortefeuille
-            self.tickersTWR[nomPortefeuille] = evolutionPourcentageTickers
-            self.prixNetTickers[nomPortefeuille] = evolutionGainsPertesTickers
-            self.prixBrutTickers[nomPortefeuille] = evolutionArgentsInvestisTickers
-            self.dividendesTickers[nomPortefeuille] = self.CalculerEvolutionDividendesPortefeuille(evolutionArgentsInvestisTickers, prixTickersFiltree)
-            self.pourcentagesMensuelsPortefeuille[nomPortefeuille] = self.CalculerEvolutionPourcentageMois(evolutionArgentsInvestisPortefeuille, self.SommeInvestissementParDate(self.datesAchats), {})
-            self.prixFifoTickers[nomPortefeuille] = self.CalculerPrixFifoTickers(montantsInvestisTickers)
-            self.fondsInvestisTickers[nomPortefeuille] = montantsInvestisCumules
-            self.montantsInvestisTickers[nomPortefeuille] = montantsInvestisTickers
-            self.montantsVentesTickers[nomPortefeuille] = evolutionVentesTickers
-            self.soldeCompteBancaire[nomPortefeuille] = (self.EvolutionDepotEspeces() + evolutionArgentsInvestisPortefeuille)
-            self.cash[nomPortefeuille] = pd.Series(0.0, index=prixTickers.index, dtype=float)
+            self.cash[portfolio_name] = self.compute_cash_evolution(portfolio_transactions)["cash_cumulative"]
+            self.fees[portfolio_name] = self.compute_fees_evolution(portfolio_transactions)["cumulative_fees"]
 
-    def CalculerPrixMoyenPondereAchatReplicationDeMonPortefeuille(self, prixTickers: pd.DataFrame, tickerPourcentages: list) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """
-        Calcule le prix moyen pondéré d'achat pour chaque ticker en fonction des investissements et des ventes réalisés
-        dans le portefeuille. Simule également l'évolution des montants investis au fil du temps.
+            def graphique(df, title):
+                import plotly.express as px
+                # Transformer le DataFrame en format long (melt)
+                df_melt = df.reset_index().melt(id_vars='index', var_name='Action', value_name='Prix')
 
-        Args:
-            prixTickers (pd.DataFrame): 
-                DataFrame contenant les prix quotidiens des tickers, indexé par date (datetime).
-                - Les lignes représentent les dates.
-                - Les colonnes représentent les tickers.
+                # Tracer
+                fig = px.line(df_melt, x='index', y='Prix', color='Action', title=title)
+                fig.update_layout(
+                    xaxis_title='Date',
+                    yaxis_title='Prix (€)',
+                    height=920,
+                    template='plotly_white'
+                )
+                fig.show()
 
-            tickerPourcentages (dict): 
-                Dictionnaire comportant les tickers (str) comme clés, et leurs pourcentages (float) comme valeurs,
-                indiquant la répartition des investissements pour chaque ticker dans le portefeuille.
-                Exemple : {'AAPL': 50.0, 'MSFT': 50.0}.
+            # graphique(tickers_gain_pct, "TWR")
+            # graphique(tickers_gain, "Gains €")
+            # graphique(tickers_valuation, "Valorisation")
+            # graphique(ticker_invested_amounts, "Argent investis cumulées")
+            # graphique(self.calculate_dividends_evolution(tickers_valuation, tickers_prices), "Dividendes par tickers")
+            # graphique(tickers_pru, "PRU tickers")
 
-        Returns:
-            tuple: 
-                - pd.DataFrame: Montants investis par date et par ticker.
-                - pd.DataFrame: Montants des ventes réalisées par date et par ticker.
-                - pd.DataFrame: Montants investis cumulés par date et par ticker.
-        """
-        assert isinstance(prixTickers, pd.DataFrame), "prixTickers doit être un DataFrame."
-        assert isinstance(tickerPourcentages, dict), "tickerPourcentages doit être un dictionnaire."
+            # graphique(portfolio_valuation, "portfolio_valuation")
+            # graphique(portfolio_gain, "Portefeuille €")
+            # graphique(portfolio_gain_pct, "Portefeuille %")
 
-        datesInvestissementsPrix = self.SommeInvestissementParDate(self.datesAchats)
-        datesVentesPrix = self.SommeInvestissementParDate(self.datesVentes)
-        datesVentes = sorted(list(datesVentesPrix.keys()))
-        datesInvestissements = sorted(list(datesInvestissementsPrix.keys()))
-        datesInvestissementsVentes = sorted(datesVentes + datesInvestissements)
-        argentVendu = 0
+    def created_transactions(self, portfolio: dict) -> pd.DataFrame:
+        transactions_buy_sell = self.transactions[self.transactions["operation"].isin(["buy", "sell", "interest"])]
 
-        # Créer des DataFrames pour stocker les prix moyens pondérés d'achat, les quantités totales et les montants investis
-        montantsInvestis = pd.DataFrame(0.0, index=prixTickers.index, columns=prixTickers.columns, dtype=float)
-        evolutionVentesTickers = pd.DataFrame(0.0, index=prixTickers.index, columns=prixTickers.columns, dtype=float)
+        rows = []
+        for date, row in transactions_buy_sell.iterrows():
+            if (row["operation"] == "buy") or (row["operation"] == "sell"):
+                for ticker, pct in portfolio[0].items():
+                    price = self.tickers_prices.at[date, ticker]
+                    if (row["operation"] == "buy"):
+                        amount = ((row["amount"] - row["fees"]) * pct / 100)
+                    else:
+                        amount = ((row["amount"]) / len(portfolio[0].keys()))
 
-        # Calcul du prix moyen pondéré pour chaque date d'achat
-        for date in datesInvestissementsVentes:
+                    rows.append(
+                        {
+                            "date": date,
+                            "ticker": ticker,
+                            "operation": row["operation"],
+                            "stock_price": price,
+                            "amount": amount,
+                            "quantity": amount / price,
+                            "fees": 0.0,
+                        }
+                    )
+            elif (row["operation"] == "interest"):
+                rows.append(
+                    {
+                        "date": date,
+                        "ticker": None,
+                        "operation": row["operation"],
+                        "stock_price": None,
+                        "amount": row["amount"],
+                        "quantity": None,
+                        "fees": 0.0,
+                    }
+                )
 
-            if date in datesVentes:
-                argentVendu += datesVentesPrix[date]
+        transaction_portfolio = pd.DataFrame(rows).set_index("date")
+        transaction_portfolio.sort_index(inplace=True)
 
-            if date in datesInvestissements:
-                montant = max(0, (datesInvestissementsPrix[date] - argentVendu))
-                # On met à jour l'argent vendu
-                argentVendu = max(0, (argentVendu - montant))
-
-                for ticker, repartitionPourcentage in tickerPourcentages.items():
-                    # Pour chaque ticker, on calcule la quantité achetée et met à jour les prix et quantités cumulés
-                    montantAchete = (montant * repartitionPourcentage / 100)
-                    montantsInvestis.at[date, ticker] = montantAchete
-
-        montantsInvestisCumules = montantsInvestis.cumsum(axis=0)
-        return montantsInvestis, evolutionVentesTickers, montantsInvestisCumules
-    
-    
+        return transaction_portfolio

@@ -3,7 +3,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.conf import settings
-
+from django.db.models import Sum
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -42,6 +42,8 @@ CURRENCY_CHOICES = [
     ('EUR', '€'),
 ]
 
+PORTFOLIO_MAIN_NAME = "all"
+
 class Company(models.Model):
     name = models.CharField(max_length=20)
     ticker = models.CharField(max_length=5, unique=True, primary_key=True)
@@ -79,6 +81,20 @@ class StockPrice(models.Model):
     def __str__(self):
         return f"{self.ticker} - {self.date}"
 
+class StockSplit(models.Model):
+    ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
+    date = models.DateField()
+    ratio = models.FloatField()  # Exemple : 2.0 pour un split 2:1
+
+    class Meta:
+        unique_together = ("ticker", "date")
+        indexes = [
+            models.Index(fields=["ticker", "date"]),
+        ]
+
+    def __str__(self):
+        return f"{self.ticker.ticker} - {self.date} : {self.ratio}"
+
 class UserPreference(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
 
@@ -101,8 +117,8 @@ class Portfolio(models.Model):
         super().save(*args, **kwargs)
 
         if is_new:
-            # Crée "My Portfolio" s’il n’existe pas encore pour cet utilisateur
-            Portfolio.objects.get_or_create(user=self.user, name="My Portfolio")
+            # Crée PORTFOLIO_MAIN_NAME s’il n’existe pas encore pour cet utilisateur
+            Portfolio.objects.get_or_create(user=self.user, name=PORTFOLIO_MAIN_NAME)
 
 class PortfolioTicker(models.Model):
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
@@ -119,9 +135,9 @@ class PortfolioTicker(models.Model):
         is_new = self._state.adding
         super().save(*args, **kwargs)
 
-        if is_new and self.portfolio.name != "My Portfolio":
-            # Ajouter dans "My Portfolio" si ticker/currency manquant
-            global_portfolio, _ = Portfolio.objects.get_or_create(user=self.portfolio.user, name="My Portfolio")
+        if is_new and self.portfolio.name != PORTFOLIO_MAIN_NAME:
+            # Ajouter dans PORTFOLIO_MAIN_NAME si ticker/currency manquant
+            global_portfolio, _ = Portfolio.objects.get_or_create(user=self.portfolio.user, name=PORTFOLIO_MAIN_NAME)
             PortfolioTicker.objects.get_or_create(
                 portfolio=global_portfolio,
                 ticker=self.ticker,
@@ -131,9 +147,9 @@ class PortfolioTicker(models.Model):
     def delete(self, *args, **kwargs):
         user = self.portfolio.user
 
-        # Supprimer seulement si ce n'est pas "My Portfolio"
-        if self.portfolio.name != "My Portfolio":
-            global_portfolio = Portfolio.objects.get(user=user, name="My Portfolio")
+        # Supprimer seulement si ce n'est pas PORTFOLIO_MAIN_NAME
+        if self.portfolio.name != PORTFOLIO_MAIN_NAME:
+            global_portfolio = Portfolio.objects.get(user=user, name=PORTFOLIO_MAIN_NAME)
 
             # Le ticker dans le portefeuille global
             global_ticker = PortfolioTicker.objects.filter(
@@ -143,8 +159,8 @@ class PortfolioTicker(models.Model):
             ).first()
 
             if global_ticker:
-                # Est-ce qu’il reste un autre portefeuille (hors "My Portfolio") qui utilise ce ticker/currency ?
-                other_portfolios = Portfolio.objects.filter(user=user).exclude(name="My Portfolio")
+                # Est-ce qu’il reste un autre portefeuille (hors PORTFOLIO_MAIN_NAME) qui utilise ce ticker/currency ?
+                other_portfolios = Portfolio.objects.filter(user=user).exclude(name=PORTFOLIO_MAIN_NAME)
                 ticker_still_used = PortfolioTicker.objects.filter(
                     portfolio__in=other_portfolios,
                     ticker=self.ticker,
@@ -152,7 +168,7 @@ class PortfolioTicker(models.Model):
                 ).exclude(pk=self.pk).exists()
 
                 if not ticker_still_used:
-                    # Est-ce qu'il reste des transactions associées dans "My Portfolio" ?
+                    # Est-ce qu'il reste des transactions associées dans PORTFOLIO_MAIN_NAME ?
                     has_transactions = PortfolioTransaction.objects.filter(
                         portfolio=global_portfolio,
                         portfolio_ticker=global_ticker
@@ -186,6 +202,10 @@ class PortfolioTransaction(models.Model):
 
     def __str__(self):
         return f"{self.operation.upper()} - {self.portfolio_ticker.ticker if self.portfolio_ticker else 'N/A'} - {self.quantity}"
+    
+    @classmethod
+    def total_fees_for_portfolio(cls, portfolio):
+        return cls.objects.filter(portfolio=portfolio).aggregate(total_fees=Sum('fees'))['total_fees'] or 0
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding
@@ -199,10 +219,10 @@ class PortfolioTransaction(models.Model):
 
         super().save(*args, **kwargs)
 
-        if self.portfolio.name == "My Portfolio":
+        if self.portfolio.name == PORTFOLIO_MAIN_NAME:
             return
 
-        global_portfolio, _ = Portfolio.objects.get_or_create(user=self.user, name="My Portfolio")
+        global_portfolio, _ = Portfolio.objects.get_or_create(user=self.user, name=PORTFOLIO_MAIN_NAME)
 
         global_ticker = None
         if self.portfolio_ticker:
@@ -213,7 +233,7 @@ class PortfolioTransaction(models.Model):
             )
 
         # --- Si update : soustraire ancienne valeur
-        if old_tx and old_tx.portfolio.name != "My Portfolio":
+        if old_tx and old_tx.portfolio.name != PORTFOLIO_MAIN_NAME:
             old_global_ticker = None
             if old_tx.portfolio_ticker:
                 old_global_ticker = PortfolioTicker.objects.filter(
@@ -272,8 +292,8 @@ class PortfolioTransaction(models.Model):
             )
 
     def delete(self, *args, **kwargs):
-        if self.portfolio.name != "My Portfolio":
-            global_portfolio = Portfolio.objects.get(user=self.user, name="My Portfolio")
+        if self.portfolio.name != PORTFOLIO_MAIN_NAME:
+            global_portfolio = Portfolio.objects.get(user=self.user, name=PORTFOLIO_MAIN_NAME)
 
             global_ticker = None
             if self.portfolio_ticker:
@@ -309,16 +329,23 @@ class PortfolioPerformance(models.Model):
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
     calculated_at = models.DateTimeField(auto_now=True)
 
-    twr_by_ticker = models.JSONField()
-    net_price_by_ticker = models.JSONField()
-    gross_price_by_ticker = models.JSONField()
-    invested_by_ticker = models.JSONField()
-    sold_by_ticker = models.JSONField()
-    dividends_by_ticker = models.JSONField()
+    tickers_invested_amounts = models.JSONField()
+    tickers_sold_amounts = models.JSONField()
+    tickers_twr = models.JSONField()
+    tickers_gain = models.JSONField()
+    tickers_valuation = models.JSONField()
+    ticker_invested_amounts = models.JSONField()
+    tickers_dividends = models.JSONField()
+    tickers_pru = models.JSONField()
 
     portfolio_twr = models.JSONField()
-    net_portfolio_price = models.JSONField()
-    monthly_percentage = models.JSONField()
-    bank_balance = models.JSONField()
-    total_invested = models.JSONField()
-    cash = models.JSONField()
+    portfolio_gain = models.JSONField()
+    portfolio_monthly_percentages = models.JSONField()
+    portfolio_valuation = models.JSONField()
+    portfolio_invested_amounts = models.JSONField()
+    
+    portfolio_cash = models.JSONField()
+    portfolio_fees = models.JSONField()
+    portfolio_cagr = models.JSONField()
+    portfolio_dividend_yield = models.JSONField()
+    portfolio_dividend_earn = models.JSONField()

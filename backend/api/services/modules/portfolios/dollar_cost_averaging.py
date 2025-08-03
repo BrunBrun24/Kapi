@@ -1,5 +1,5 @@
-from api.services.modules.portfolios.base_portfolio import BasePortfolio
 import pandas as pd
+from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
 class DollarCostAveraging(BasePortfolio):
 
@@ -14,60 +14,76 @@ class DollarCostAveraging(BasePortfolio):
             réduisant l'impact des fluctuations du marché.
         """
 
-        tickers_prices = self.tickers_prices.copy()
         investment_dates = self.get_dca_dcv_investment_dates()
 
         for portfolio in self.portfolio_allocation:
-            portfolio_name = portfolio[-1] + " DCA"
+            portfolio_name = portfolio[-1]
             tickers = list(portfolio[0].keys())
-            filtered_tickers_prices = tickers_prices.loc[:, tickers_prices.columns.intersection(tickers)]
-            money = self.initial_invested_amount()
-            investment_amounts = {date: (money / len(investment_dates)) for date in investment_dates}
-            transaction_portfolio = self.initialise_transaction_portfolio(self.create_transaction_dca(investment_amounts, portfolio[0]))
+            tickers_prices = self.tickers_prices.loc[:, self.tickers_prices.columns.intersection(tickers)]
+            investment_amounts = {date: (self.money / len(investment_dates)) for date in investment_dates}
+            portfolio_transactions = self.initialise_transactions_portfolio(self.create_transaction_dca(investment_amounts, portfolio[0]))
 
-            invested_amounts_tickers = self.weighted_average_purchase_price(transaction_portfolio)
-            cumulative_invested_amounts = self.investment_amount_evolution(transaction_portfolio)
+            # Tickers
+            ticker_invested_amounts = self.tickers_investment_amount_evolution(portfolio_transactions)
+            tickers_pru = self.calculate_pru(portfolio_transactions, ticker_invested_amounts)
+            tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(ticker_invested_amounts, tickers_pru, tickers_prices)
 
-            # Calcul des montants
-            money_evolution_tickers, sales_evolution_tickers, gains_losses_evolution_tickers = self.capital_gain_losses_composed(invested_amounts_tickers, filtered_tickers_prices)
-            portfolio_invested_amounts_evolution = money_evolution_tickers.sum(axis=1)
-            portfolio_gains_losses_evolution = gains_losses_evolution_tickers.sum(axis=1)
+            # Portefeuille
+            portfolio_valuation = tickers_valuation.sum(axis=1)
+            portfolio_realized_gains_losses = self.compute_plus_value_evolution(portfolio_transactions, ticker_invested_amounts)["plus_value_cumulative"]
+            portfolio_gain = tickers_gain.sum(axis=1) + portfolio_realized_gains_losses
+            # L'argent investi correspond à l'argent investi dans les tickers en enlevant les plus et moins values réalisées
+            invested_money = (ticker_invested_amounts.sum(axis=1).iloc[-1] - portfolio_realized_gains_losses.iloc[-1])
+            portfolio_gain_pct = self.calculate_portfolio_percentage_change(portfolio_gain, invested_money)
 
-            # Calcul des pourcentages
-            tickers_percentage_evolution = self.calculate_percentage_evolution_tickers(money_evolution_tickers, cumulative_invested_amounts)
-            portfolio_percentage_evolution = self.calculate_portfolio_percentage_change(portfolio_gains_losses_evolution, cumulative_invested_amounts.iloc[-1].sum())
+            
+            self.tickers_twr[portfolio_name] = tickers_gain_pct
+            self.tickers_gain[portfolio_name] = tickers_gain
+            self.tickers_valuation[portfolio_name] = tickers_valuation
+            self.tickers_dividends[portfolio_name] = self.calculate_dividends_evolution(tickers_valuation, tickers_prices)
+            self.ticker_invested_amounts[portfolio_name] = ticker_invested_amounts
+            self.tickers_pru[portfolio_name] = tickers_pru
 
-            # On stock les DataFrames
-            self.portfolio_twr[portfolio_name] = portfolio_percentage_evolution
-            self.portfolio_net_price[portfolio_name] = portfolio_gains_losses_evolution
-            self.ticker_twr[portfolio_name] = tickers_percentage_evolution
-            self.tickers_net_prices[portfolio_name] = gains_losses_evolution_tickers
-            self.tickers_gross_prices[portfolio_name] = money_evolution_tickers
+            self.portfolio_twr[portfolio_name] = portfolio_gain_pct
+            self.portfolio_gain[portfolio_name] = portfolio_gain
+            self.portfolio_valuation[portfolio_name] = portfolio_valuation
+            self.portfolio_invested_amounts[portfolio_name] = ticker_invested_amounts.sum(axis=1)
             self.portfolio_monthly_percentages[portfolio_name] = self.calculate_monthly_percentage_change(
-                portfolio_invested_amounts_evolution, 
-                transaction_portfolio
+                portfolio_valuation,
+                portfolio_transactions
             )
-            self.tickers_funds_invested[portfolio_name] = cumulative_invested_amounts
-            self.tickers_invested_amounts[portfolio_name] = invested_amounts_tickers
-            self.tickers_sold_amounts[portfolio_name] = pd.DataFrame(index=filtered_tickers_prices.index, columns=filtered_tickers_prices.columns, dtype=float)
-            self.bank_balance[portfolio_name] = portfolio_invested_amounts_evolution
-            self.cash[portfolio_name] = portfolio_invested_amounts_evolution
+            self.portfolio_cagr[portfolio_name] = self.calculate_portfolio_cagr(portfolio_valuation)
+            self.portfolio_cash[portfolio_name] = self.compute_cash_evolution(portfolio_transactions)["cash_cumulative"]
+            self.portfolio_fees[portfolio_name] = self.compute_fees_evolution(portfolio_transactions)["cumulative_fees"]
+            self.portfolio_dividend_yield[portfolio_name] = self.calculate_dividend_yield(portfolio_transactions, portfolio_valuation)
+            self.portfolio_dividend_earn[portfolio_name] = self.calculate_dividend_earn(portfolio_transactions)
 
-    @staticmethod
-    def create_transaction_dca(buy_transactions: dict, portfolio: dict) -> list[dict]:
-        result = []
+            def graphique(df, title):
+                import plotly.express as px
+                # Transformer le DataFrame en format long (melt)
+                df_melt = df.reset_index().melt(id_vars='index', var_name='Action', value_name='Prix')
 
-        for date, amount in buy_transactions.items():
-            for ticker, percentage in portfolio.items():
-                transaction = {}
-                transaction["date"] = date
-                transaction["ticker"] = ticker
-                transaction["operation"] = "buy"
-                transaction["amount"] = (amount * percentage / 100)
+                # Tracer
+                fig = px.line(df_melt, x='index', y='Prix', color='Action', title=title)
+                fig.update_layout(
+                    xaxis_title='Date',
+                    yaxis_title='Prix (€)',
+                    height=920,
+                    template='plotly_white'
+                )
+                fig.show()
 
-                result.append(transaction)
+            # graphique(tickers_gain_pct, "TWR")
+            # graphique(tickers_gain, "Gains €")
+            # graphique(tickers_valuation, "Valorisation")
+            # graphique(ticker_invested_amounts, "Argent investis cumulées")
+            # graphique(self.calculate_dividends_evolution(tickers_valuation, tickers_prices), "Dividendes par tickers")
+            # graphique(tickers_pru, "PRU tickers")
 
-        return result
+            # graphique(portfolio_valuation, "portfolio_valuation")
+            # graphique(portfolio_gain, "Portefeuille €")
+            # graphique(portfolio_gain_pct, "Portefeuille %")
+
 
     def get_dca_dcv_investment_dates(self) -> list:
         """
@@ -94,3 +110,41 @@ class DollarCostAveraging(BasePortfolio):
             current_date = current_date.replace(month=next_month, year=next_year, day=1)
 
         return sorted(start_of_months)
+
+    @staticmethod
+    def create_transaction_dca(buy_transactions: dict, portfolio: dict) -> list[dict]:
+        result = []
+
+        for date, amount in buy_transactions.items():
+            for ticker, percentage in portfolio.items():
+                transaction = {}
+                transaction["date"] = date
+                transaction["ticker"] = ticker
+                transaction["operation"] = "buy"
+                transaction["amount"] = (amount * percentage / 100)
+
+                result.append(transaction)
+
+        return result
+
+    def initialise_transactions_portfolio(self, transactions: list) -> pd.DataFrame:
+        rows = []
+        for t in transactions:
+            price = self.tickers_prices.at[t["date"], t["ticker"]]
+            rows.append(
+                {
+                    "date": t["date"],
+                    "ticker": t["ticker"],
+                    "operation": t["operation"],
+                    "stock_price": price,
+                    "amount": t["amount"],
+                    "quantity": t["amount"] / price,
+                    "fees": 0.0,
+                }
+            )
+
+        transaction_portfolio = pd.DataFrame(rows).set_index("date")
+        transaction_portfolio.sort_index(inplace=True)
+
+        return transaction_portfolio
+    
