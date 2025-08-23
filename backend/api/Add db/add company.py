@@ -65,17 +65,35 @@ def create_companies(tickers):
             description=description,
             founded_date=founded_date,
             stock_exchange=stock_exchange,
-            logo=f"logos/{ticker.upper()}.png"
+            # logo=f"logos/{ticker.upper()}.png"
         )
         company.save()
         print(f"✅ {ticker} ajouté avec succès !")
 
+def update_currencies():
+    print("🔄 Mise à jour des devises ...")
+    for company in Company.objects.all():
+        old_currency = company.currency
 
-tickers = get_sp500_tickers() + get_cac40_tickers()
+        if "." in company.ticker:
+            company.currency = "EUR"
+        else:
+            company.currency = "USD"
+
+        if company.currency != old_currency:  # éviter des saves inutiles
+            company.save(update_fields=["currency"])
+            print(f"✅ {company.ticker} : {old_currency} → {company.currency}")
+        else:
+            print(f"➡️ {company.ticker} déjà correct ({company.currency})")
+
+    print("Terminé ✅")
+
+
+# tickers = get_sp500_tickers() + get_cac40_tickers()
+# create_companies(tickers)
+tickers = ["NVO", "SW.PA", "PLX.PA", "CSSPX.MI", "PHYMF", "EURUSD=X", "SPY", "NQ=F", "URTH", "^FCHI"]
 create_companies(tickers)
-tickers = ["NVO", "SW.PA", "PLX.PA", "CSSPX.MI", "PHYMF"]
-create_companies(tickers)
-print(f"Terminé ✅")
+print("Terminé ✅")
 
 
 # from stock.models import Company

@@ -93,16 +93,22 @@ class PortfolioTransactionCreateSerializer(serializers.ModelSerializer):
         if operation in ["buy", "sell"]:
             if not data.get("portfolio_ticker") or data.get("stock_price") is None:
                 raise serializers.ValidationError("Le ticker et le prix sont requis pour un achat ou une vente.")
+            if not data.get("currency"):
+                raise serializers.ValidationError("La devise est requise pour un achat ou une vente.")
 
         elif operation == "dividend":
             if not data.get("portfolio_ticker") or data.get("quantity") is None:
                 raise serializers.ValidationError("Le ticker et la quantité sont requis pour un dividende.")
+            if not data.get("currency"):
+                raise serializers.ValidationError("La devise est requise pour un dividende.")
 
         elif operation == "interet":
             if data.get("portfolio_ticker"):
                 raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un intérêt.")
             if data.get("quantity") is None:
                 raise serializers.ValidationError("La quantité est requise pour un intérêt.")
+            if not data.get("currency"):
+                raise serializers.ValidationError("La devise est requise pour un intérêt.")
 
         elif operation in ["deposit", "withdrawal"]:
             if not data.get("currency"):

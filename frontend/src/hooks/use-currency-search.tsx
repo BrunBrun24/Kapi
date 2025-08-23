@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import api from "@/api";
 
@@ -30,13 +30,17 @@ export function useCurrencySearch() {
   }, []);
 
   const handleSearchChangeCurrency = (
-      e: React.ChangeEvent<HTMLInputElement>
-    ) => {
-      const query = e.target.value;
-      setSearchCurrency(query);
-  
-      setFilteredCurrency(allCurrencies.slice(0, 10)); // Limiter à 10 résultats
-    };
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const query = e.target.value;
+    setSearchCurrency(query);
+
+    setFilteredCurrency(allCurrencies.slice(0, 10)); // Limiter à 10 résultats
+  };
+
+  const handleFocusCurrency = () => {
+    setFilteredCurrency(allCurrencies.slice(0, 10)); // 10 premières devises
+  };
 
   const handleSelectCurrency = (code: string) => {
     setSelectedCurrency(code);
@@ -51,5 +55,7 @@ export function useCurrencySearch() {
     selectedCurrency,
     handleSearchChangeCurrency,
     handleSelectCurrency,
+    setFilteredCurrency,
+    handleFocusCurrency,
   };
 }

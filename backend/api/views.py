@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from api.utils import html_error_response
+from api.services.modules.portefeuille_bourse import PortefeuilleBourse
 
 from .models import (
     CURRENCY_CHOICES,
@@ -137,8 +138,9 @@ class PortfolioTickersView(APIView):
 
 class PortfolioAvailableTickersView(APIView):
     """
-    Retourne tous les tickers qui ne sont pas encore associés à un portefeuille donné.
-    Nécessite l'identifiant du portefeuille.
+    Retourne tous les tickers qui ne sont pas encore associés à un portefeuille donné
+    pour une devise donnée. Si un ticker est déjà présent dans toutes les devises possibles,
+    il n'est pas ajouté.
     """
     permission_classes = [IsAuthenticated]
 
@@ -149,31 +151,48 @@ class PortfolioAvailableTickersView(APIView):
         except Portfolio.DoesNotExist:
             return Response({"detail": "Portfolio not found."}, status=404)
 
-        # Tickers déjà présents dans ce portefeuille
-        existing_tickers = PortfolioTicker.objects.filter(portfolio=portfolio).values_list("ticker__ticker", flat=True)
+        # Récupérer toutes les devises disponibles pour PortfolioTicker
+        all_currencies = [c[0] for c in PortfolioTicker._meta.get_field("currency").choices]
 
-        # Tous les tickers sauf ceux déjà associés
-        available_companies = Company.objects.exclude(ticker__in=existing_tickers)
+        # Récupérer les tickers déjà présents dans le portefeuille avec leur devise
+        existing_tickers = PortfolioTicker.objects.filter(portfolio=portfolio).values_list("ticker__ticker", "currency")
 
-        data = [
-            {"ticker": company.ticker, "name": company.name}
-            for company in available_companies
-        ]
+        # Transformer en dict { "AAPL": {"USD", "EUR"} }
+        ticker_currencies = {}
+        for ticker, currency in existing_tickers:
+            ticker_currencies.setdefault(ticker, set()).add(currency)
+
+        # Tous les tickers possibles
+        available_companies = Company.objects.all()
+
+        data = []
+        for company in available_companies:
+            existing_for_company = ticker_currencies.get(company.ticker, set())
+            remaining_currencies = set(all_currencies) - existing_for_company
+
+            # S'il reste au moins une devise possible, on ajoute l'action
+            if remaining_currencies:
+                data.append({
+                    "ticker": company.ticker,
+                    "name": company.name,
+                    "currencies": list(remaining_currencies)
+                })
 
         return Response(data)
 
 class DeletePortfolioTickerView(APIView):
     """
-    Supprime un ticker d'un portefeuille appartenant à l'utilisateur connecté.
+    Supprime un ticker+currency d'un portefeuille appartenant à l'utilisateur connecté.
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    def delete(self, request, portfolio_id, ticker, *args, **kwargs):
+    def delete(self, request, portfolio_id, ticker, currency, *args, **kwargs):
         try:
             portfolio_ticker = PortfolioTicker.objects.get(
                 portfolio__id=portfolio_id,
                 portfolio__user=request.user,
-                ticker__ticker=ticker
+                ticker__ticker=ticker,
+                currency=currency.upper()  # On sécurise
             )
         except PortfolioTicker.DoesNotExist:
             return Response(
@@ -183,10 +202,35 @@ class DeletePortfolioTickerView(APIView):
 
         portfolio_ticker.delete()
         return Response(
-            {"detail": "PortfolioTicker deleted successfully."},
+            {"detail": f"PortfolioTicker {ticker}/{currency} deleted successfully."},
             status=status.HTTP_204_NO_CONTENT
         )
 
+class PortfolioTickerCurrenciesView(APIView):
+    """
+    Retourne les devises disponibles pour un ticker donné
+    dans un portefeuille précis d'un utilisateur.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, portfolio_id: int, ticker: str):
+        try:
+            currencies = PortfolioTicker.get_currencies_for_ticker(
+                user_id=request.user.id,
+                portfolio_id=portfolio_id,
+                ticker=ticker
+            )
+            return Response({
+                "user_id": request.user.id,
+                "portfolio_id": portfolio_id,
+                "ticker": ticker,
+                "currencies": currencies
+            })
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 # Transaction
 class PortfolioTransactionCreateView(generics.CreateAPIView):
@@ -210,7 +254,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             if operation in ["buy", "sell"]:
                 stock_price = Decimal(data["stock_price"])
                 quantity = round(amount / stock_price, 6)
-                currency = None
+                currency = data["currency"]
                 try:
                     portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], data["portfolio"], request.user).pk
                 except PortfolioTicker.DoesNotExist:
@@ -218,7 +262,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             elif operation == "dividend":
                 quantity = Decimal(data["quantity"])
                 stock_price = None
-                currency = None
+                currency = data["currency"]
                 try:
                     portfolio_ticker = self.get_portfolio_ticker(data["portfolio_ticker"], data["portfolio"], request.user).pk
                 except PortfolioTicker.DoesNotExist:
@@ -227,7 +271,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
                 quantity = Decimal(data["quantity"])
                 stock_price = None
                 portfolio_ticker = None
-                currency = None
+                currency = data["currency"]
             elif operation in ["deposit", "withdrawal"]:
                 quantity = None
                 stock_price = None
@@ -278,7 +322,7 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             "amount": round(amount, 2),
             "fees": fees,
             "stock_price": stock_price,
-            "quantity": round(quantity, 6),
+            "quantity": quantity,
             "currency": currency,
         }
 
@@ -296,20 +340,6 @@ class PortfolioTransactionCreateView(generics.CreateAPIView):
             portfolio_id=portfolio_id,
             portfolio__user=user
         )
-
-class UserTransactionsView(APIView):
-    """
-    Récupère toutes les transactions de tous les portefeuilles de l'utilisateur connecté.
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        transactions = PortfolioTransaction.objects.filter(
-            portfolio_ticker__portfolio__user=request.user
-        ).select_related("portfolio_ticker", "portfolio_ticker__portfolio")
-
-        serializer = PortfolioTransactionDetailSerializer(transactions, many=True)
-        return Response(serializer.data)
 
 class PortfolioTransactionsView(APIView):
     """
@@ -489,6 +519,7 @@ class ExcelPortfolioTransactionUploadView(APIView):
                 try:
                     portfolio_ticker = PortfolioTicker.objects.get(
                         ticker=ticker,
+                        currency=currency,
                         portfolio_id=portfolio,
                         portfolio__user=request.user
                     )
@@ -505,7 +536,10 @@ class ExcelPortfolioTransactionUploadView(APIView):
                         f"Erreur ligne {index + 2}",
                         ["Division par zéro : le prix de l'action est égal à 0."]
                     )
-                quantity = round((amount - fees) / stock_price, 6)
+                if operation == "sell":
+                    quantity = round((amount + fees) / stock_price, 6)
+                else:
+                    quantity = round(amount / stock_price, 6)
 
             # Recherche d'une transaction existante pour mise à jour éventuelle
             existing_tx = None
@@ -515,7 +549,8 @@ class ExcelPortfolioTransactionUploadView(APIView):
                     portfolio_ticker=portfolio_ticker,
                     date=date,
                     stock_price=stock_price,
-                    operation=operation
+                    operation=operation,
+                    currency=currency
                 ).first()
 
             if existing_tx:
@@ -537,7 +572,7 @@ class ExcelPortfolioTransactionUploadView(APIView):
                     "quantity": round(float(quantity), 6),
                     "stock_price": round(float(stock_price), 2) if operation in ["buy", "sell"] else None,
                     "portfolio_ticker": portfolio_ticker.pk if portfolio_ticker else None,
-                    "currency": currency if operation in ["deposit", "withdrawal", "interest"] else None,
+                    "currency": currency,
                 }
 
                 serializer = PortfolioTransactionCreateSerializer(data=serializer_data, context={'request': request})
@@ -563,106 +598,6 @@ class ExcelPortfolioTransactionUploadView(APIView):
 
 
 # Portefeuille Performance
-class UserPortfoliosPerformanceAVANT(APIView):
-    """
-    Récupère les données de performance de tous les portefeuilles d'un utilisateur connecté
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        user = request.user
-        # Récupère le portefeuille global de l'utilisateur
-        portfolio_id = Portfolio.objects.filter(user=user, name="My Portfolio").values_list("id", flat=True).first()
-        # Récupère les perfomrances du portefeuille global de l'utilisateur
-        performances = PortfolioPerformance.objects.filter(user=user, portfolio_id=portfolio_id).first()
-
-        if performances is None:
-            return Response(
-                {"detail": "Aucune performance trouvée pour l'utilisateur."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        portfolios_data = Portfolio.objects.filter(user=user).exclude(name="My Portfolio").values("id", "name")
-        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
-
-        result = {}
-        result["twr_by_ticker"] = performances.twr_by_ticker
-        result["net_price_by_ticker"] = performances.net_price_by_ticker
-        result["gross_price_by_ticker"] = performances.gross_price_by_ticker
-        result["invested_by_ticker"] = performances.invested_by_ticker
-        result["sold_by_ticker"] = performances.sold_by_ticker
-        result["dividends_by_ticker"] = performances.dividends_by_ticker
-
-        result["portfolio_twr"] = performances.portfolio_twr
-        result["net_portfolio_price"] = performances.net_portfolio_price
-        result["monthly_percentage"] = performances.monthly_percentage
-        result["bank_balance"] = performances.bank_balance
-        result["total_invested"] = performances.total_invested
-        result["cash"] = performances.cash
-
-        result["portfolios"] = portfolios
-
-        print(result["portfolios"])
-
-        # print(result["portfolio_twr"])
-
-        ####### A SUPPRIMER ET LE FAIRE DANS LE FRONT-END ########
-        for key, elements in result.items():
-            if key in ["portfolio_twr", "net_portfolio_price", "monthly_percentage", "bank_balance", "total_invested", "cash"]:
-                for ele in elements:
-                    for key in ele.keys():
-                        if key != "date" and isinstance(ele[key], float):
-                            ele[key] = round(ele[key], 2)
-
-        return Response(result)
-
-class UserPortfoliosPerformance(APIView):
-    """
-    Récupère les données de performance de tous les portefeuilles d'un utilisateur connecté
-    """
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        user = request.user
-        # Récupère le portefeuille global de l'utilisateur
-        portfolios = list(Portfolio.objects.filter(user=user).values())
-
-        portfolios_data = Portfolio.objects.filter(user=user).values("id", "name")
-        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
-
-        result = {}
-        for portfolio in portfolios:
-            portfolio_name = portfolio["name"]
-            result[portfolio["name"]] = {}
-            # Récupère les perfomrances du portefeuille
-            performances = PortfolioPerformance.objects.filter(user=user, portfolio_id=portfolio["id"]).first()
-
-            result[portfolio_name]["twr_by_ticker"] = performances.twr_by_ticker
-            result[portfolio_name]["net_price_by_ticker"] = performances.net_price_by_ticker
-            result[portfolio_name]["gross_price_by_ticker"] = performances.gross_price_by_ticker
-            result[portfolio_name]["invested_by_ticker"] = performances.invested_by_ticker
-            result[portfolio_name]["sold_by_ticker"] = performances.sold_by_ticker
-            result[portfolio_name]["dividends_by_ticker"] = performances.dividends_by_ticker
-
-            result[portfolio_name]["portfolio_twr"] = performances.portfolio_twr
-            result[portfolio_name]["net_portfolio_price"] = performances.net_portfolio_price
-            result[portfolio_name]["monthly_percentage"] = performances.monthly_percentage
-            result[portfolio_name]["bank_balance"] = performances.bank_balance
-            result[portfolio_name]["total_invested"] = performances.total_invested
-            result[portfolio_name]["cash"] = performances.cash
-
-            ####### A SUPPRIMER ET LE FAIRE DANS LE FRONT-END ########
-            for key, elements in result[portfolio_name].items():
-                if key in ["portfolio_twr", "net_portfolio_price", "monthly_percentage", "bank_balance", "total_invested", "cash"]:
-                    for ele in elements:
-                        for key in ele.keys():
-                            if key != "date" and isinstance(ele[key], float):
-                                ele[key] = round(ele[key], 2)
-
-        
-        # print(result["My Portfolio"]["total_invested"])
-        return Response(result)
-
 class UserPortfolios(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -674,19 +609,109 @@ class UserPortfolios(APIView):
 
         return Response(portfolios)
 
+class UserPortfolioPerformanceSummary(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        portfolios_data = Portfolio.objects.filter(user=user).exclude(name="all").values("id", "name")
+        portfolios = [{"id": p["id"], "name": p["name"]} for p in portfolios_data]
+
+        return Response(portfolios)
+
+class PortfolioPerformanceDynamicView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, portfolio_id):
+        requested_fields = request.query_params.get("fields")
+        if not requested_fields:
+            return Response({"error": "Missing `fields` parameter."}, status=status.HTTP_400_BAD_REQUEST)
+
+        field_list = requested_fields.split(",")
+        data = get_portfolio_performance_data(request.user, portfolio_id, field_list)
+
+        if data is None:
+            return Response({"error": "Performance not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(data, status=status.HTTP_200_OK)
+
+class UserPortfolioPerformanceRepartitionAllPortfolio(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        portfolios = Portfolio.objects.filter(user=user).exclude(name="all").values_list('name', 'id')
+
+        # Palette de 20 couleurs bien distinctes
+        color_palette = [
+            "#5863f8", "#c70039", "#5dd39e", "#fdfd96", "#6c5ce7",
+            "#9467bd", "#00cec9", "#fa824c", "#00b894", "#ff7675", 
+            "#ffa630", "#fd79a8", "#e17055", "#fab1a0", "#55efc4"
+        ]
+
+        chart_config = {
+            "repartition": {
+                "label": "Répartition",
+            },
+        }
+        portfolios_valuation = []
+        fields = ["portfolio_valuation"]
+
+        for index, (portfolio_name, portfolio_id) in enumerate(portfolios):
+            data = get_portfolio_performance_data(user, portfolio_id, fields)
+
+            result = {}
+            if data and isinstance(data.get("portfolio_valuation"), list) and len(data["portfolio_valuation"]) > 0:
+                last_entry = data["portfolio_valuation"][-1]
+                last_value = last_entry.get(portfolio_name)
+                result["portfolio"] = portfolio_name
+                result["repartition"] = last_value or 0
+            else:
+                result["portfolio"] = portfolio_name
+                result["repartition"] = 0
+
+            color = color_palette[index % len(color_palette)]
+            result["fill"] = color
+
+            chart_config[portfolio_name] = {
+                "label": portfolio_name,
+                "color": color
+            }
+
+            portfolios_valuation.append(result)
+
+        total_valuation = sum(p["repartition"] for p in portfolios_valuation)
+
+        portfolios_repartition = []
+        for p in portfolios_valuation:
+            percentage = (p["repartition"] / total_valuation * 100) if total_valuation > 0 else 0
+            portfolios_repartition.append({
+                "portfolio": p["portfolio"],
+                "repartition": round(percentage, 2),
+                "fill": p["fill"]
+            })
+
+        return Response((portfolios_repartition, chart_config), status=status.HTTP_200_OK)
+
+class UserPortfolioPerformanceTwrDate(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, start_date, portfolio_id):
+        tickers_valuations = request.data.get("tickers_valuations")
+        start_date = pd.to_datetime(start_date)
+        if not isinstance(tickers_valuations, dict):
+            return Response({"error": "tickers_valuations must be a dictionary"}, status=400)
+        
+        tickers_prices = StockPrice.get_open_prices_dataframe_for_user_start_date(request.user, start_date)
+        portefeuille = PortefeuilleBourse(user_id=request.user, portfolio_id=portfolio_id, tickers_prices=tickers_prices, start_date=start_date, tickers_valuations=tickers_valuations)
+        
+        return Response(portefeuille.get_twr())
 
 
 
 
-class TickerListView(APIView):
-    """
-    Récupère la liste de toutes les entreprises disponibles avec leurs tickers.
-    Accessible sans authentification.
-    """
-    def get(self, request, *args, **kwargs):
-        companies = Company.objects.all()
-        tickers = [{"ticker": company.ticker, "name": company.name} for company in companies]
-        return Response(tickers)
+
 
 class CurrencyListView(APIView):
     """
@@ -721,3 +746,36 @@ class CurrencyTickerView(APIView):
         }
 
         return Response(ticker_currency_map)
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_portfolio_performance_data(user, portfolio_id, fields: list[str]):
+    try:
+        performance = PortfolioPerformance.objects.get(user=user, portfolio_id=portfolio_id)
+    except PortfolioPerformance.DoesNotExist:
+        return None
+
+    valid_fields = {
+        field.name for field in PortfolioPerformance._meta.fields
+        if field.name not in ["id", "user", "portfolio", "calculated_at"]
+    }
+
+    data = {}
+    for field in fields:
+        clean_field = field.strip()
+        if clean_field in valid_fields:
+            data[clean_field] = getattr(performance, clean_field)
+        else:
+            data[clean_field] = None  # ou logguer un avertissement
+    return data
+

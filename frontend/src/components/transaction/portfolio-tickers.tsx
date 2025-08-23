@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+"use client";
+
+import React, { useEffect, useState, useRef } from "react";
 import { ChevronDown, ChevronUp, PlusCircle, Trash2 } from "lucide-react";
 import {
   AlertDialog,
@@ -13,7 +15,6 @@ import {
 
 import api from "@/api";
 import TransactionForm from "./transaction-form";
-import { useCurrencySearch } from "@/hooks/use-currency-search";
 import type {
   Ticker,
   TickerNotInPortfolio,
@@ -29,73 +30,59 @@ export interface PortfolioIdProps {
 const PortfolioTickers: React.FC<PortfolioIdProps> = ({
   selectedPortfolioId,
 }) => {
-  const [isTickerListOpen, setIsTickerListOpen] = useState(false);
+  const [isTickerListOpen, setIsTickerListOpen] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [tickersInPortfolio, setTickersInPortfolio] = useState<Ticker[]>([]);
   const [tickersNotInPortfolio, setTickersNotInPortfolio] = useState<
     TickerNotInPortfolio[]
   >([]);
-  const [formData, setFormData] = useState({
-    ticker: "",
-    currency: "",
-  });
+  const [formData, setFormData] = useState({ ticker: "", currencies: "" });
 
   const [searchTicker, setSearchTicker] = useState("");
   const [filteredTickers, setFilteredTickers] = useState<
-    { ticker: string; name: string }[]
+    TickerNotInPortfolio[]
   >([]);
 
-  const [tickerToDelete, setTickerToDelete] = useState<string | null>(null);
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>([]);
+  const [searchCurrency, setSearchCurrency] = useState("");
+  const [filteredCurrency, setFilteredCurrency] = useState<string[]>([]);
 
-  const {
-    searchCurrency,
-    filteredCurrency,
-    selectedCurrency,
-    handleSearchChangeCurrency,
-    handleSelectCurrency,
-  } = useCurrencySearch();
+  const [tickerToDelete, setTickerToDelete] = useState<{
+    ticker: string;
+    currency: string;
+  } | null>(null);
 
-  useEffect(() => {
-    if (selectedCurrency) {
-      setFormData((prev) => ({
-        ...prev,
-        currency: selectedCurrency,
-      }));
-    }
-  }, [selectedCurrency]);
+  // Refs pour gérer le clic en dehors
+  const tickerDropdownRef = useRef<HTMLDivElement>(null);
+  const currencyDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Fetch tickers in portfolio
   const fetchTickersInPortfolio = async () => {
+    if (!selectedPortfolioId) return;
     try {
-      if (!selectedPortfolioId) return;
-
       const res = await api.get(
         `/api/portfolio/${selectedPortfolioId}/tickers/`
       );
-      const portfolioTickers: Ticker[] = res.data;
-
-      const sortedTickers = portfolioTickers.sort((a: Ticker, b: Ticker) =>
+      const sortedTickers = res.data.sort((a: Ticker, b: Ticker) =>
         a.ticker.localeCompare(b.ticker)
       );
-
       setTickersInPortfolio(sortedTickers);
     } catch (error) {
       console.error("Erreur lors de la récupération des tickers", error);
     }
   };
 
+  // Fetch tickers not in portfolio
   const fetchTickersNotInPortfolio = async () => {
+    if (!selectedPortfolioId) return;
     try {
-      if (!selectedPortfolioId) {
-        return;
-      }
       const res = await api.get(
         `/api/portfolio/${selectedPortfolioId}/available-tickers/`
       );
-      const portfolioTickers = res.data;
-      setTickersNotInPortfolio(portfolioTickers);
+      setTickersNotInPortfolio(res.data);
     } catch (error) {
       console.error(
-        "Erreur lors de la récupération des tickers qui ne sont pas associé au portefeuille",
+        "Erreur lors de la récupération des tickers non associés",
         error
       );
     }
@@ -106,56 +93,98 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     fetchTickersNotInPortfolio();
   }, [selectedPortfolioId]);
 
-  // Filtrer les tickers en fonction de la recherche
+  // Gestion recherche tickers
   const handleSearchChangeTicker = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchTicker(query);
 
-    // Filtrer les tickers par ticker ou par nom de société
     const filtered = tickersNotInPortfolio.filter(
-      (ticker) =>
-        ticker.ticker.toLowerCase().includes(query.toLowerCase()) ||
-        ticker.name.toLowerCase().includes(query.toLowerCase())
+      (t) =>
+        t.ticker.toLowerCase().includes(query.toLowerCase()) ||
+        t.name.toLowerCase().includes(query.toLowerCase())
     );
-
-    setFilteredTickers(filtered.slice(0, 10)); // Limiter à 10 résultats
+    setFilteredTickers(filtered.slice(0, 10));
   };
 
-  const handleSelectTicker = (ticker: string) => {
-    // Mettre à jour le champ de recherche avec le ticker sélectionné
-    setSearchTicker(`${ticker}`);
+  const handleSelectTicker = (ticker: TickerNotInPortfolio) => {
+    setSearchTicker(ticker.ticker);
+    setFormData({ ticker: ticker.ticker, currencies: "" });
 
-    // Mettre à jour les valeurs de formData avec le ticker et le nom de la société
-    setFormData((prev) => ({
-      ...prev,
-      ticker,
-    }));
+    const currencies = Array.isArray(ticker.currencies)
+      ? ticker.currencies
+      : [];
+    setAvailableCurrencies(currencies);
     setFilteredTickers([]);
+    setSearchCurrency("");
+
+    if (currencies.length === 1) {
+      setSearchCurrency(currencies[0]);
+      setFormData((prev) => ({ ...prev, currencies: currencies[0] }));
+      setFilteredCurrency([]);
+    } else {
+      setFilteredCurrency([]);
+    }
   };
 
+  // Gestion recherche devises
+  const handleSearchChangeCurrency = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const query = e.target.value.toUpperCase();
+    setSearchCurrency(query);
+
+    const filtered = availableCurrencies.filter((cur) =>
+      cur.toUpperCase().includes(query)
+    );
+    setFilteredCurrency(filtered.slice(0, 10));
+  };
+
+  const handleSelectCurrency = (currencies: string) => {
+    setSearchCurrency(currencies);
+    setFormData((prev) => ({ ...prev, currencies }));
+    setFilteredCurrency([]);
+  };
+
+  // Clic en dehors pour fermer les dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        tickerDropdownRef.current &&
+        !tickerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setFilteredTickers([]);
+      }
+      if (
+        currencyDropdownRef.current &&
+        !currencyDropdownRef.current.contains(event.target as Node)
+      ) {
+        setFilteredCurrency([]);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPortfolioId) return;
 
     try {
-      // Utilisation de axios pour envoyer la requête POST
       const response = await api.post("/api/portfolio/ticker/", {
         portfolio: selectedPortfolioId,
         ticker: formData.ticker.toUpperCase(),
-        currency: formData.currency,
+        currency: formData.currencies,
       });
 
-      // Vérification de la réponse
-      if (response.status !== 201) {
-        throw new Error("Failed to add ticker");
-      }
+      if (response.status !== 201) throw new Error("Failed to add ticker");
 
-      // Réinitialisation du formulaire
-      setFormData({
-        ticker: "",
-        currency: "",
-      });
+      setFormData({ ticker: "", currencies: "" });
       setSearchTicker("");
+      setSearchCurrency("");
       setIsFormOpen(false);
       await fetchTickersInPortfolio();
       await fetchTickersNotInPortfolio();
@@ -164,26 +193,23 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     }
   };
 
+  // Delete
   const confirmDeleteTicker = async () => {
     if (!tickerToDelete || !selectedPortfolioId) return;
-
     try {
       await api.delete(
-        `api/portfolio/${selectedPortfolioId}/ticker/${tickerToDelete}/delete/`
+        `api/portfolio/${selectedPortfolioId}/ticker/${tickerToDelete.ticker}/${tickerToDelete.currency}/delete/`
       );
       await fetchTickersInPortfolio();
       await fetchTickersNotInPortfolio();
     } catch (error) {
-      console.error("Erreur lors de la suppression de l'entreprise", error);
-      // Ici tu peux afficher un toast ou un message d’erreur custom
+      console.error("Erreur lors de la suppression du ticker", error);
     } finally {
       setTickerToDelete(null);
     }
   };
 
-  if (!selectedPortfolioId) {
-    return;
-  }
+  if (!selectedPortfolioId) return null;
 
   return (
     <>
@@ -216,10 +242,11 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
           </button>
         </div>
 
-        {isFormOpen ? (
+        {isFormOpen && (
           <form onSubmit={handleSubmit} className="form-fields">
             <div className="form-grid-2">
-              <div>
+              {/* Dropdown Tickers */}
+              <div ref={tickerDropdownRef}>
                 <label className="form-label">
                   Rechercher un Ticker ou une Entreprise
                 </label>
@@ -228,6 +255,9 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
                     type="text"
                     value={searchTicker}
                     onChange={handleSearchChangeTicker}
+                    onFocus={() =>
+                      setFilteredTickers(tickersNotInPortfolio.slice(0, 10))
+                    }
                     placeholder="ex: AAPL"
                     className="form-input"
                   />
@@ -236,7 +266,7 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
                       {filteredTickers.map((ticker) => (
                         <li
                           key={ticker.ticker}
-                          onClick={() => handleSelectTicker(ticker.ticker)}
+                          onClick={() => handleSelectTicker(ticker)}
                           className="dropdown-item"
                         >
                           {ticker.ticker} ({ticker.name})
@@ -246,25 +276,29 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
                   )}
                 </div>
               </div>
-              <div>
+
+              {/* Dropdown Devise */}
+              <div ref={currencyDropdownRef}>
+                <label className="form-label">Devise</label>
                 <div style={{ position: "relative" }}>
-                  <label className="form-label">Devise</label>
                   <input
                     type="text"
                     value={searchCurrency}
                     onChange={handleSearchChangeCurrency}
-                    placeholder="ex: (EUR, USD, ...)"
+                    onFocus={() => setFilteredCurrency(availableCurrencies)}
+                    placeholder="ex: EUR, USD..."
                     className="form-input"
+                    disabled={availableCurrencies.length === 0}
                   />
                   {filteredCurrency.length > 0 && (
                     <ul className="dropdown-list">
                       {filteredCurrency.map((cur) => (
                         <li
-                          key={cur.code}
-                          onClick={() => handleSelectCurrency(cur.code)}
+                          key={cur}
+                          onClick={() => handleSelectCurrency(cur)}
                           className="dropdown-item"
                         >
-                          {cur.code}
+                          {cur}
                         </li>
                       ))}
                     </ul>
@@ -278,39 +312,48 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
               </button>
             </div>
           </form>
-        ) : !isFormOpen && tickersInPortfolio.length === 0 ? (
+        )}
+
+        {!isFormOpen && tickersInPortfolio.length === 0 && (
           <p className="placeholder">
             Sélectionnez un ticker pour pouvoir ajouter des transactions
           </p>
-        ) : (
-          isTickerListOpen && (
-            <div className="portfolio-ticker-container">
-              {tickersInPortfolio.map((t) => (
-                <div key={t.ticker} className="portfolio-ticker">
-                  <img
-                    src={t.logo}
-                    alt={`Logo de ${t.ticker}`}
-                    className="ticker-logo"
-                  />
-                  <div className="portfolio-ticker-data">
-                    <p className="ticker-symbol">{t.ticker}</p>
-                    <p className="ticker-currency">{t.currency}</p>
-                  </div>
-                  <button
-                    className="ticker-remove-button"
-                    onClick={() => setTickerToDelete(t.ticker)}
-                    aria-label={`Supprimer ${t.ticker}`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+        )}
+
+        {isTickerListOpen && tickersInPortfolio.length > 0 && !isFormOpen && (
+          <div className="portfolio-ticker-container">
+            {tickersInPortfolio.map((t) => (
+              <div
+                key={`${t.ticker}-${t.currency}`}
+                className="portfolio-ticker"
+              >
+                <img
+                  src={t.logo}
+                  alt={`Logo de ${t.ticker}`}
+                  className="ticker-logo"
+                />
+                <div className="portfolio-ticker-data">
+                  <p className="ticker-symbol">{t.ticker}</p>
+                  <p className="ticker-currencies">{t.currency}</p>
                 </div>
-              ))}
-            </div>
-          )
+                <button
+                  className="ticker-remove-button"
+                  onClick={() =>
+                    setTickerToDelete({
+                      ticker: t.ticker,
+                      currency: t.currency,
+                    })
+                  }
+                  aria-label={`Supprimer ${t.ticker}`}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Si aucun ticker n'a été selectionné alors ne pas afficher les transactions */}
       {tickersInPortfolio.length !== 0 && (
         <TransactionForm
           selectedPortfolioId={selectedPortfolioId}
@@ -328,7 +371,7 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
               <AlertDialogTitle>Supprimer le ticker ?</AlertDialogTitle>
               <AlertDialogDescription>
                 ⚠️ Cette action est <strong>irréversible</strong>. Les
-                transactions liés à ce ticker seront définitivement supprimées.
+                transactions liées à ce ticker seront définitivement supprimées.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

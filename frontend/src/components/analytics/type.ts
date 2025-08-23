@@ -6,19 +6,26 @@ export type PortfolioEntry = {
 
 // Les différentes données de performance par type de métrique, chaque champ est un tableau d'entries
 export type PortfolioPerformanceData = {
-  twr_by_ticker: PortfolioEntry[];
-  net_price_by_ticker: PortfolioEntry[];
-  gross_price_by_ticker: PortfolioEntry[];
-  invested_by_ticker: PortfolioEntry[];
-  sold_by_ticker: PortfolioEntry[];
-  dividends_by_ticker: PortfolioEntry[];
+  tickers_invested_amounts: PortfolioEntry[];
+  tickers_sold_amounts: PortfolioEntry[];
+  tickers_twr: PortfolioEntry[];
+  tickers_gain: PortfolioEntry[];
+  tickers_valuation: PortfolioEntry[];
+  ticker_invested_amounts: PortfolioEntry[];
+  tickers_dividends: PortfolioEntry[];
+  tickers_pru: PortfolioEntry[];
 
   portfolio_twr: PortfolioEntry[];
-  net_portfolio_price: PortfolioEntry[];
-  monthly_percentage: PortfolioEntry[];
-  bank_balance: PortfolioEntry[];
-  total_invested: PortfolioEntry[];
-  cash: PortfolioEntry[];
+  portfolio_gain: PortfolioEntry[];
+  portfolio_monthly_percentages: PortfolioEntry[];
+  portfolio_valuation: PortfolioEntry[];
+  portfolio_invested_amounts: PortfolioEntry[];
+  
+  portfolio_cash: PortfolioEntry[];
+  portfolio_fees: PortfolioEntry[];
+  portfolio_cagr: Record<string, Record<string, number | null>>;
+  portfolio_dividend_yield: Record<string, number | null>;
+  portfolio_dividend_earn: Record<string, number | null>;
 };
 
 // Le type global de la réponse API : un objet indexé par nom de portefeuille
@@ -30,8 +37,9 @@ export type PortfolioData = {
 
 // Typage pour les props dans React, on peut avoir un data ou undefined
 export type PortfolioPerformances = {
-  performanceData: PortfolioData | undefined;
-  portfolioId?: string; // tu utilises "id" qui est une string, donc je mets string ici
+  performanceData?: PortfolioData | undefined;
+  portfolioName?: string; // tu utilises "id" qui est une string, donc je mets string ici
+  dataPortfolio?: UserPortfolio;
 };
 
 export type UserPortfolio = {
@@ -39,7 +47,11 @@ export type UserPortfolio = {
   name: string;
 };
 
-export const portfolioGlobalName = "My Portfolio";
+export type SelectedPortfolio = {
+  selectedPortfolio?: UserPortfolio;
+};
+
+export const portfolioGlobalName = "all";
 
 export type PortfolioCardData = {
   data: {

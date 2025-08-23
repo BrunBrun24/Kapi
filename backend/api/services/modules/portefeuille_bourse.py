@@ -1,22 +1,78 @@
 from collections import defaultdict
-import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerformance, Portfolio
+from datetime import datetime
+from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerformance, Portfolio, StockPrice, StockSplit
 from api.services.modules.portfolios.my_portfolio import MyPortfolio
 from django.contrib.auth import get_user_model
-import yfinance as yf
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAveraging
 from api.services.modules.portfolios.replication import Replication
 
 class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
-    def __init__(self, user_id: int, portfolio_id: int, start_date: datetime = None, tickers_valuations: dict = {}):
+    def __init__(self, user_id: int, portfolio_id: int, tickers_prices: pd.DataFrame, start_date: datetime = None, tickers_valuations: dict = {}):
         self.user_id = user_id
         self.portfolio_id = portfolio_id
         portfolio_name  = Portfolio.objects.filter(id=portfolio_id).values("name").first()["name"]
         
+        transactions_df = self.get_transactions(user_id, portfolio_id)
+        print(transactions_df)
+
+        self.transactions = transactions_df
+
+        self.start_date = transactions_df.index[0]
+        self.end_date = pd.to_datetime(tickers_prices.index[-1])
+
+        self.tickers_prices = self.convert_currency_usd_to_eur(tickers_prices.copy(), self.start_date, pd.to_datetime(self.end_date)).sort_index()
+
+        self.tickers_invested_amounts = {}
+        self.tickers_sold_amounts = {}
+        self.tickers_twr = {}
+        self.tickers_gain = {}
+        self.tickers_valuation = {}
+        self.ticker_invested_amounts = {}
+        self.tickers_dividends = {}
+        self.tickers_pru = {}
+
+        self.portfolio_twr = pd.DataFrame(dtype=float)
+        self.portfolio_gain = pd.DataFrame(dtype=float)
+        self.portfolio_monthly_percentages = pd.DataFrame(dtype=float)
+        self.portfolio_valuation = pd.DataFrame(dtype=float)
+        self.portfolio_invested_amounts = pd.DataFrame(dtype=float)
+        self.portfolio_cash = pd.DataFrame(dtype=float)
+
+        self.portfolio_fees = pd.DataFrame(dtype=float)
+        self.portfolio_cagr = {}
+        self.portfolio_dividend_yield = {}
+        self.portfolio_dividend_earn = {}
+
+        if start_date is not None:
+            self.transactions = self.set_transaction_with_date(transactions_df, start_date, tickers_valuations, self.tickers_prices)
+            self.start_date = self.transactions.index[0]
+        
+        # Gérer les dates manquantes dans ticker_prices
+        # 1. Normaliser les dates
+        self.tickers_prices.index = pd.to_datetime(self.tickers_prices.index).normalize()
+        # 2. Créer toutes les dates
+        all_dates = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+        # 3. Reindex et propager les valeurs
+        self.tickers_prices = self.tickers_prices.reindex(all_dates).ffill().bfill()
+
+        self.my_portfolio(portfolio_name)
+
+        portfolio_percentage = [
+            [{'SPY': 100}, 'S&P 500'],
+            [{'NQ=F': 100}, 'Nasdaq 100'],
+            [{'URTH': 100}, 'MSCI WORLD'],
+            [{'^FCHI': 100}, 'CAC 40'],
+        ]
+        self.set_portfolio_allocation(portfolio_percentage)
+        self.dca()
+
+        if start_date is None:
+            self.save_portfolio_performance()
+
+
+    def get_transactions(self, user_id: int, portfolio_id: int) -> pd.DataFrame:
         # Récupère les transactions avec les IDs de PortfolioTicker
         transactions = PortfolioTransaction.objects.filter(
             user=user_id,
@@ -58,107 +114,50 @@ class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
 
         # Ajoute la colonne 'ticker'
         transactions_df['ticker'] = transactions_df['portfolio_ticker_id'].map(ticker_mapping)
+
         # Ajuster les quantités en fonction des splits
-        self.ajuster_quantites_splits(transactions_df)
-
-        self.transactions = transactions_df
-
-        self.start_date = transactions_df.index[0]
-        self.end_date = datetime.today()
-
-        self.tickers_invested_amounts = {}
-        self.tickers_sold_amounts = {}
-        self.tickers_twr = {}
-        self.tickers_gain = {}
-        self.tickers_valuation = {}
-        self.ticker_invested_amounts = {}
-        self.tickers_dividends = {}
-        self.tickers_pru = {}
-
-        self.portfolio_twr = pd.DataFrame(dtype=float)
-        self.portfolio_gain = pd.DataFrame(dtype=float)
-        self.portfolio_monthly_percentages = pd.DataFrame(dtype=float)
-        self.portfolio_valuation = pd.DataFrame(dtype=float)
-        self.portfolio_invested_amounts = pd.DataFrame(dtype=float)
-        self.portfolio_cash = pd.DataFrame(dtype=float)
-
-        self.portfolio_fees = pd.DataFrame(dtype=float)
-        self.portfolio_cagr = {}
-        self.portfolio_dividend_yield = {}
-        self.portfolio_dividend_earn = {}
-
-        if start_date is not None:
-            self.transactions = self.set_transaction_with_date(transactions_df, start_date, tickers_valuations)
-            self.start_date = self.transactions.index[0]
-            
-        self.my_portfolio(portfolio_name)
-
-        portfolio_percentage = [
-            [{'SPY': 100}, 'S&P 500'],
-            [{'NQ=F': 100}, 'Nasdaq 100'],
-            [{'URTH': 100}, 'MSCI WORLD'],
-            [{'^FCHI': 100}, 'CAC 40'],
-        ]
-        self.set_portfolio_allocation(portfolio_percentage)
-        self.dca()
-
-        if start_date is None:
-            self.save_portfolio_performance()
+        return self.ajuster_quantites_splits(transactions_df)
 
     @staticmethod
     def ajuster_quantites_splits(transactions_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Ajuste les colonnes 'quantity' et 'stock_price' d'un DataFrame de transactions
-        en fonction des splits ayant eu lieu après chaque transaction.
+        Ajuste les colonnes 'quantity' et 'stock_price' en fonction des splits stockés en base de données.
 
-        :param transactions_df: DataFrame contenant une colonne 'ticker', 'quantity', 'stock_price' et un index datetime
-        :return: DataFrame avec les colonnes 'quantity' et 'stock_price'
+        :param transactions_df: DataFrame avec un index datetime, et colonnes 'ticker', 'quantity', 'stock_price'
+        :return: DataFrame mis à jour
         """
-        
-        def get_splits(ticker):
-            try:
-                splits = yf.Ticker(ticker).splits
-                return ticker, splits.tz_convert(None) if not splits.empty else None
-            except Exception as e:
-                print(f"Erreur lors de la récupération des splits pour {ticker} : {e}")
-                return ticker, None
 
-        # Supprimer les lignes sans ticker et obtenir les tickers uniques
-        unique_tickers = transactions_df['ticker'].dropna().unique()
+        # Vérifie les colonnes nécessaires
+        if not {'ticker', 'quantity', 'stock_price'}.issubset(transactions_df.columns):
+            raise ValueError("Le DataFrame doit contenir les colonnes 'ticker', 'quantity' et 'stock_price'")
 
-        # Utiliser un ThreadPool pour paralléliser les appels à yfinance
-        splits_dict = {}
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(get_splits, ticker): ticker for ticker in unique_tickers}
-            for future in as_completed(futures):
-                ticker, splits = future.result()
-                if splits is not None:
-                    splits_dict[ticker] = splits
+        # Récupère les tickers uniques
+        tickers = transactions_df['ticker'].dropna().unique().tolist()
 
-        # Fonction d'ajustement pour une seule ligne
+        # Récupère les splits depuis la base via la méthode utilitaire
+        splits_dict = StockSplit.get_splits_from_db(tickers)
+
+        # Fonction pour ajuster une ligne selon les splits
         def ajuster_ligne(row):
             ticker = row['ticker']
-            date_transaction = row.name
-            quantite_initiale = row['quantity']
-            prix_initial = row['stock_price']
+            date_transaction = row.name.date()
+            quantite = row['quantity']
+            prix = row['stock_price']
 
             if ticker not in splits_dict:
-                return pd.Series({
-                    'quantity': quantite_initiale,
-                    'stock_price': prix_initial
-                })
+                return pd.Series({'quantity': quantite, 'stock_price': prix})
 
-            splits_ticker = splits_dict[ticker]
-            splits_apres = splits_ticker[splits_ticker.index > date_transaction]
+            splits = splits_dict[ticker]
+            splits_apres = splits[splits.index > pd.to_datetime(date_transaction)]
 
             facteur_split = splits_apres.prod() if not splits_apres.empty else 1.0
 
             return pd.Series({
-                'quantity': quantite_initiale * facteur_split,
-                'stock_price': prix_initial / facteur_split
+                'quantity': quantite * facteur_split,
+                'stock_price': prix / facteur_split
             })
 
-        # Appliquer les ajustements
+        # Applique les ajustements
         ajustements = transactions_df.apply(
             lambda row: ajuster_ligne(row) if pd.notna(row['ticker']) else pd.Series({
                 'quantity': row['quantity'],
@@ -167,7 +166,7 @@ class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
             axis=1
         )
 
-        # Fusionner les résultats dans le DataFrame original
+        # Fusionne les résultats dans le DataFrame original
         transactions_df['quantity'] = ajustements['quantity']
         transactions_df['stock_price'] = ajustements['stock_price']
 
@@ -192,37 +191,50 @@ class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
             for ticker, percentage in portfolio[0].items():
                 assert isinstance(ticker, str), f"Chaque clé (ticker) doit être une chaîne, mais '{ticker}' ne l'est pas."
                 assert isinstance(percentage, (int, float)), f"Chaque valeur (pourcentage) doit être un nombre, mais '{percentage}' ne l'est pas."
+                
+        self.portfolio_allocation = portfolio_allocation
 
         all_tickers = sorted(set([ticker for portfolio in portfolio_allocation for ticker in portfolio[0].keys()]))
         initial_tickers = sorted(list(self.tickers_prices.columns))
         new_tickers = [ticker for ticker in all_tickers if ticker not in initial_tickers]
 
-        new_tickers_prices = self.download_tickers_price(new_tickers, self.start_date, self.end_date)
+        new_tickers_prices = StockPrice.get_open_prices_dataframe_for_tickers(new_tickers)
+        
+        self.tickers_prices.index = pd.to_datetime(self.tickers_prices.index)
+        new_tickers_prices.index = pd.to_datetime(new_tickers_prices.index)
+        common_index = self.tickers_prices.index.intersection(new_tickers_prices.index)
+        self.tickers_prices = self.tickers_prices.loc[common_index]
+        new_tickers_prices = new_tickers_prices.loc[common_index]
+
         self.tickers_prices = pd.concat([self.tickers_prices, new_tickers_prices], axis=1)
+        # Gérer les dates manquantes dans ticker_prices
+        all_dates = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+        self.tickers_prices = self.tickers_prices.reindex(all_dates).ffill().bfill()
 
-    @staticmethod
-    def set_transaction_with_date(transactions_df: pd.DataFrame, start_date: datetime, tickers_valuations: dict) -> pd.DataFrame:
-        # S'assurer que l'index est bien de type datetime
-        if not isinstance(transactions_df.index, pd.DatetimeIndex):
-            transactions_df.index = pd.to_datetime(transactions_df.index)
+    def set_transaction_with_date(self, transactions_all: pd.DataFrame, start_date: datetime, tickers_valuations: dict, tickers_prices: pd.DataFrame) -> pd.DataFrame:
+        start_date = pd.to_datetime(start_date).normalize()
+        tickers_prices.index = pd.to_datetime(tickers_prices.index).normalize()
+        tickers_prices = tickers_prices.ffill().bfill()
 
-        # Filtrer les transactions à partir de la date de départ
-        transactions_df = transactions_df[transactions_df.index >= start_date]
+        # Prendre la date la plus proche disponible
+        start_date = tickers_prices.index[
+            tickers_prices.index.get_indexer([start_date], method='nearest')[0]
+        ]
+
+        # S'assurer que l'index est bien datetime
+        if not isinstance(transactions_all.index, pd.DatetimeIndex):
+            transactions_all.index = pd.to_datetime(transactions_all.index)
+
+        # Filtrer transactions
+        transactions_after = transactions_all[transactions_all.index >= start_date]
 
         new_rows = []
 
+        # Création des lignes "buy"
         for ticker, valuation in tickers_valuations.items():
-            date_lookup = start_date - timedelta(days=1)
-            date_str = date_lookup.strftime('%Y-%m-%d')
-
-            try:
-                data = yf.download(ticker, start=date_str, end=start_date.strftime('%Y-%m-%d'), auto_adjust=True, progress=False)
-                if data.empty:
-                    print(f"Aucune donnée trouvée pour {ticker} à la date {date_str}")
-                    continue
-
-                stock_price = data['Close'].iloc[0].item()
-                quantity = float(valuation) / stock_price
+            if float(valuation) != 0:
+                stock_price = tickers_prices.loc[start_date, ticker]
+                previous_quantity = float(valuation) / stock_price
 
                 new_row = {
                     'id': None,
@@ -231,35 +243,24 @@ class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
                     'amount': float(valuation),
                     'fees': 0.0,
                     'stock_price': stock_price,
-                    'quantity': quantity,
+                    'quantity': previous_quantity,
                     'currency': None,
                     'ticker': ticker
                 }
-
                 new_rows.append((start_date, new_row))
 
-            except Exception as e:
-                print(f"Erreur lors du traitement du ticker {ticker}: {e}")
-
-        # Créer un DataFrame avec les mêmes colonnes que transactions_df
+        # Création DataFrame et fusion
         if new_rows:
             new_df = pd.DataFrame(
                 [row for _, row in new_rows],
                 index=[date for date, _ in new_rows],
-                columns=transactions_df.columns  # Assure la même structure
+                columns=transactions_after.columns
             )
             new_df.index.name = 'date'
-
-            # Supprimer les colonnes entièrement vides pour éviter les warnings
             new_df = new_df.dropna(axis=1, how='all')
+            transactions_after = pd.concat([new_df, transactions_after]).sort_index()
 
-            # Fusionner et trier
-            transactions_df = pd.concat([new_df, transactions_df]).sort_index()
-
-        # Trier le DataFrame final par ordre chronologique sur l'index (qui contient les dates)
-        transactions_df = transactions_df.sort_index()
-
-        return transactions_df
+        return transactions_after.sort_index()
 
     @staticmethod
     def convert_df_to_json(df: pd.DataFrame):
@@ -383,5 +384,5 @@ class PortefeuilleBourse(MyPortfolio, DollarCostAveraging, Replication):
     )
 
     def get_twr(self) -> list:
-        return self.convert_df_to_json(self.portfolio_twr)
+        return {"portfolio_twr": self.convert_df_to_json(self.portfolio_twr)}
     

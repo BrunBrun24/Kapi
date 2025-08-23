@@ -1,6 +1,12 @@
 "use client";
 
-import { CartesianGrid, Line, LineChart, XAxis } from "recharts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis, // 👈 Import ajouté
+} from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,32 +15,62 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import {
+  PortfolioData,
+  portfolioGlobalName,
+  UserPortfolio,
+} from "@/components/analytics/type";
 import { useEffect, useState } from "react";
 import api from "@/api";
-import { PortfolioData, portfolioGlobalName } from "@/components/analytics/type";
 
 const chartConfig = {
   desktop: {
     label: portfolioGlobalName,
-    color: "var(--chart-1)",
+    color: "#55A4FD",
   },
   mobile: {
     label: "S&P 500 DCA",
-    color: "var(--chart-2)",
+    color: "#EF8CF8",
   },
 } satisfies ChartConfig;
 
 type ChartLineMultipleProps = {
   title: string;
   height: number;
-  performanceData: PortfolioData | undefined;
+  selectedPortfolio?: UserPortfolio;
 };
 
 export function ChartLineMultiple({
   title,
   height,
-  performanceData,
+  selectedPortfolio,
 }: ChartLineMultipleProps) {
+
+  const [twr, setTwr] = useState([]);
+  
+  useEffect(() => {
+    if (!selectedPortfolio?.id) return;
+
+    const fetchData = async () => {
+      try {
+        const res = await api.get(
+          `/api/portfolio-performance/${selectedPortfolio.id}/`,
+          {
+            params: {
+              fields: "portfolio_twr",
+            },
+          }
+        );
+        const data = res.data;
+        setTwr(data.portfolio_twr);
+      } catch (error) {
+        console.error("Error fetching performance data:", error);
+      }
+    };
+
+    fetchData();
+  }, [selectedPortfolio]);
+
   return (
     <Card>
       <CardHeader>
@@ -47,33 +83,56 @@ export function ChartLineMultiple({
           className="mx-auto aspect-square w-full"
         >
           <LineChart
-            accessibilityLayer
-            data={performanceData?.[portfolioGlobalName]?.portfolio_twr ?? []}
+            data={twr}
             margin={{
-              left: 12,
+              left: 24,
               right: 12,
+              bottom: 32, // Ajouté pour laisser de la place aux ticks tournés
             }}
           >
             <CartesianGrid vertical={false} />
+
+            {/* ✅ Axe des ordonnées ajouté */}
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              width={40}
+              tickFormatter={(value) => `${value}%`}
+            />
+
+            {/* ✅ Axe des abscisses amélioré */}
             <XAxis
               dataKey="date"
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
-              tickFormatter={(value) => value.slice(0, 3)}
+              tickMargin={10}
+              angle={-45}
+              textAnchor="end"
+              interval="preserveStartEnd"
+              tickFormatter={(value) => {
+                // Exemple de format: "Jan", "Fév", etc.
+                const date = new Date(value);
+                return date.toLocaleDateString("fr-FR", {
+                  month: "short",
+                  year: "2-digit",
+                });
+              }}
             />
+
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+
             <Line
               dataKey={portfolioGlobalName}
               type="monotone"
-              stroke="blue"
+              stroke="#55A4FD"
               strokeWidth={2}
               dot={false}
             />
             <Line
-              dataKey="S&P 500 DCA"
+              dataKey="S&P 500"
               type="monotone"
-              stroke="green"
+              stroke="#EF8CF8"
               strokeWidth={2}
               dot={false}
             />

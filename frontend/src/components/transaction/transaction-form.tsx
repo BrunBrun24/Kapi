@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { PlusCircle } from "lucide-react";
 
 import api from "@/api";
@@ -48,7 +48,28 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     selectedCurrency,
     handleSearchChangeCurrency,
     handleSelectCurrency,
+    setFilteredCurrency,
+    handleFocusCurrency,
   } = useCurrencySearch();
+
+  const currencyDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fermer les suggestions devises si clic à l'extérieur
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        currencyDropdownRef.current &&
+        !currencyDropdownRef.current.contains(event.target as Node)
+      ) {
+        setFilteredCurrency([]); // ⬅️ vide les propositions
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedCurrency) {
@@ -78,12 +99,26 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
+
+    // Filtrer par recherche
     const filtered = tickers.filter(
       (ticker) =>
         ticker.ticker.toLowerCase().includes(query.toLowerCase()) ||
         ticker.name.toLowerCase().includes(query.toLowerCase())
     );
-    setFilteredTickers(filtered.slice(0, 10));
+
+    // Supprimer les doublons sur ticker.ticker
+    const uniqueTickersMap = new Map<
+      string,
+      { ticker: string; name: string }
+    >();
+    filtered.forEach((t) => {
+      if (!uniqueTickersMap.has(t.ticker)) {
+        uniqueTickersMap.set(t.ticker, t);
+      }
+    });
+
+    setFilteredTickers(Array.from(uniqueTickersMap.values()).slice(0, 10));
   };
 
   const handleSelectTicker = (ticker: string) => {
@@ -205,6 +240,63 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     }
   };
 
+  const [availableCurrencies, setAvailableCurrencies] = useState<string[]>([]);
+  const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
+  const currencyTickerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fermer le dropdown si clic à l'extérieur
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        currencyDropdownRef.current &&
+        !currencyDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowCurrencyDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Récupérer les devises disponibles pour le ticker sélectionné
+  useEffect(() => {
+    const fetchCurrencies = async () => {
+      if (!formData.ticker || !selectedPortfolioId) return;
+
+      try {
+        const response = await api.get(
+          `/api/portfolio/${selectedPortfolioId}/ticker/${formData.ticker}/currencies/`
+        );
+        const currencies = response.data.currencies;
+        setAvailableCurrencies(currencies);
+
+        // Si une seule devise, la mettre par défaut
+        if (currencies.length === 1) {
+          setFormData((prev) => ({
+            ...prev,
+            currency: currencies[0],
+          }));
+        }
+      } catch (error) {
+        console.error("Erreur fetching currencies:", error);
+      }
+    };
+
+    fetchCurrencies();
+  }, [formData.ticker, selectedPortfolioId]);
+
+  const handleCurrencyInputClick = () => {
+    if (!formData.ticker) return; // ne rien faire si pas de ticker
+    setShowCurrencyDropdown(true);
+  };
+
+  const handleSelectCurrencyTicker = (currency: string) => {
+    setFormData((prev) => ({ ...prev, currency }));
+    setShowCurrencyDropdown(false);
+  };
+
   if (!selectedPortfolioId) return null;
 
   return (
@@ -288,6 +380,40 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                 </div>
               </div>
               <div>
+                <label className="form-label">Choisir une devise</label>
+                <div
+                  style={{ position: "relative" }}
+                  ref={currencyTickerDropdownRef}
+                >
+                  <input
+                    type="text"
+                    value={formData.currency}
+                    onClick={handleCurrencyInputClick}
+                    readOnly
+                    placeholder="Sélectionnez une devise"
+                    className="form-input"
+                  />
+                  {showCurrencyDropdown && availableCurrencies.length > 0 && (
+                    <ul className="dropdown-list">
+                      {availableCurrencies.map((cur) => (
+                        <li
+                          key={cur}
+                          onClick={() => handleSelectCurrencyTicker(cur)}
+                          className="dropdown-item"
+                        >
+                          {cur}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {["buy", "sell"].includes(formData.operation) && (
+            <div className="form-grid-2">
+              <div>
                 <label className="form-label">Montant</label>
                 <input
                   type="number"
@@ -300,11 +426,6 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                   required
                 />
               </div>
-            </div>
-          )}
-
-          {["buy", "sell"].includes(formData.operation) && (
-            <div className="form-grid-2">
               <div>
                 <label className="form-label">Prix de l'action</label>
                 <input
@@ -334,32 +455,52 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
           )}
 
           {formData.operation === "dividend" && (
-            <div className="form-grid-2">
-              <div>
-                <label className="form-label">Quantité</label>
-                <input
-                  type="number"
-                  name="quantity"
-                  value={formData.quantity}
-                  onChange={handleChange}
-                  min="0.00001"
-                  step="0.000001"
-                  className="form-input"
-                />
+            <>
+              <div className="form-grid-2">
+                <div>
+                  <label className="form-label">Montant</label>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    min="0.01"
+                    step="0.01"
+                    className="form-input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Quantité</label>
+                  <input
+                    type="number"
+                    name="quantity"
+                    value={formData.quantity}
+                    onChange={handleChange}
+                    min="0.00001"
+                    step="0.000001"
+                    className="form-input"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="form-label">Frais/Commission</label>
-                <input
-                  type="number"
-                  name="fees"
-                  value={formData.fees}
-                  onChange={handleChange}
-                  min="0"
-                  step="0.01"
-                  className="form-input"
-                />
+
+              <div className="form-grid-2">
+                <div>
+                  <div>
+                    <label className="form-label">Frais/Commission</label>
+                    <input
+                      type="number"
+                      name="fees"
+                      value={formData.fees}
+                      onChange={handleChange}
+                      min="0"
+                      step="0.01"
+                      className="form-input"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            </>
           )}
 
           {["deposit", "withdrawal", "interest"].includes(
@@ -393,15 +534,17 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
                   />
                 </div>
               </div>
-              <div style={{ position: "relative" }}>
+              <div style={{ position: "relative" }} ref={currencyDropdownRef}>
                 <label className="form-label">Devise</label>
                 <input
                   type="text"
                   value={searchCurrency}
                   onChange={handleSearchChangeCurrency}
+                  onFocus={handleFocusCurrency}
                   placeholder="ex: (EUR, USD, ...)"
                   className="form-input"
                 />
+
                 {filteredCurrency.length > 0 && (
                   <ul className="dropdown-list">
                     {filteredCurrency.map((cur) => (

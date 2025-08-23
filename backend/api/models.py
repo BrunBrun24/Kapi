@@ -1,9 +1,12 @@
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Type
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.conf import settings
 from django.db.models import Sum
+import pandas as pd
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -36,6 +39,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.email
 
+class UserPreference(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"Préférences de {self.user.email}"
+
 
 CURRENCY_CHOICES = [
     ('USD', '$'),
@@ -54,6 +63,7 @@ class Company(models.Model):
     description = models.TextField(blank=True, null=True)
     founded_date = models.DateField(blank=True, null=True)
     stock_exchange = models.CharField(max_length=50, blank=True, null=True)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES)
 
     class Meta:
         verbose_name = "Entreprise"
@@ -81,6 +91,146 @@ class StockPrice(models.Model):
     def __str__(self):
         return f"{self.ticker} - {self.date}"
 
+    @classmethod
+    def get_open_prices_dataframe_for_all_users(cls) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les open_price pour tous les tickers
+        présents dans tous les portefeuilles, indexé par date.
+        """
+        # Étape 1 : tous les tickers uniques utilisés dans les portefeuilles
+        tickers = (
+            PortfolioTicker.objects
+            .values_list('ticker__ticker', flat=True)
+            .distinct()
+        )
+
+        # Étape 2 : récupération des données de prix
+        prices = cls.objects.filter(ticker_id__in=tickers)
+
+        if not prices.exists():
+            return pd.DataFrame()
+
+        # Étape 3 : transformation en DataFrame
+        df = pd.DataFrame.from_records(
+            prices.values('date', 'ticker_id', 'open_price')
+        )
+
+        # Étape 4 : pivot pour format souhaité
+        df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
+        df_pivot.sort_index(inplace=True)
+    
+        # Conversion en float pour éviter les problèmes Decimal
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
+    @classmethod
+    def get_open_prices_dataframe_for_user(cls, user: CustomUser) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les open_price pour tous les tickers
+        détenus par un utilisateur, indexé par date.
+        """
+        # Étape 1 : récupérer les tickers uniques de l'utilisateur
+        tickers = (
+            PortfolioTicker.objects
+            .filter(portfolio__user=user)
+            .values_list('ticker__ticker', flat=True)
+            .distinct()
+        )
+
+        # Étape 2 : récupérer les données StockPrice correspondantes
+        prices = cls.objects.filter(ticker_id__in=tickers)
+
+        if not prices.exists():
+            return pd.DataFrame()  # aucun prix trouvé
+
+        # Étape 3 : construire un DataFrame
+        df = pd.DataFrame.from_records(
+            prices.values('date', 'ticker_id', 'open_price')
+        )
+
+        # Étape 4 : pivot pour mettre les tickers en colonnes
+        df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
+        df_pivot.sort_index(inplace=True)
+    
+        # Conversion en float pour éviter les problèmes Decimal
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
+    @classmethod
+    def get_open_prices_dataframe_for_user_start_date(
+        cls,
+        user: CustomUser,
+        start_date: datetime
+    ) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les open_price pour tous les tickers
+        détenus par un utilisateur, indexé par date, à partir de start_date.
+        """
+        # Étape 1 : récupérer les tickers uniques de l'utilisateur
+        tickers = (
+            PortfolioTicker.objects
+            .filter(portfolio__user=user)
+            .values_list('ticker__ticker', flat=True)
+            .distinct()
+        )
+
+        # Étape 2 : récupérer les données StockPrice correspondantes à partir de start_date
+        prices = cls.objects.filter(
+            ticker_id__in=tickers,
+            date__gte=(start_date - timedelta(days=3))
+        )
+
+        if not prices.exists():
+            return pd.DataFrame()  # aucun prix trouvé
+
+        # Étape 3 : construire un DataFrame
+        df = pd.DataFrame.from_records(
+            prices.values('date', 'ticker_id', 'open_price')
+        )
+
+        # Étape 4 : pivot pour mettre les tickers en colonnes
+        df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
+        df_pivot.sort_index(inplace=True)
+
+        # Conversion en float pour éviter les problèmes Decimal
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
+    @classmethod
+    def get_open_prices_dataframe_for_tickers(cls, tickers: list[str]) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les open_price pour les tickers passés en paramètre,
+        indexé par date.
+        
+        :param tickers: liste des tickers à récupérer
+        :return: DataFrame avec index date et colonnes tickers
+        """
+        if not tickers:
+            return pd.DataFrame()
+
+        # Filtrer les prix pour les tickers donnés
+        prices = cls.objects.filter(ticker_id__in=tickers)
+
+        if not prices.exists():
+            return pd.DataFrame()
+
+        # Transformer en DataFrame
+        df = pd.DataFrame.from_records(
+            prices.values('date', 'ticker_id', 'open_price')
+        )
+
+        # Pivot pour format souhaité
+        df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
+        df_pivot.sort_index(inplace=True)
+    
+        # Conversion en float pour éviter les problèmes Decimal
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
 class StockSplit(models.Model):
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
     date = models.DateField()
@@ -95,11 +245,142 @@ class StockSplit(models.Model):
     def __str__(self):
         return f"{self.ticker.ticker} - {self.date} : {self.ratio}"
 
-class UserPreference(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    @staticmethod
+    def get_splits_from_db(tickers: list[str]) -> dict:
+        """
+        Récupère les splits depuis la base de données pour une liste de tickers.
+
+        Args:
+            tickers (List[str]): Liste des tickers (symboles).
+
+        Returns:
+            dict: Un dictionnaire avec les tickers en clés et un pd.Series (index=date, valeur=ratio) en valeurs.
+        """
+        from django.db.models import F
+
+        splits = (
+            StockSplit.objects
+            .filter(ticker__ticker__in=tickers)
+            .values_list("ticker__ticker", "date", "ratio")
+            .order_by("ticker__ticker", "date")
+        )
+
+        result = defaultdict(list)
+        for ticker, date, ratio in splits:
+            result[ticker].append((pd.to_datetime(date), ratio))
+
+        # Conversion en Series pour faciliter la manipulation avec pandas
+        splits_dict = {
+            ticker: pd.Series(
+                data=[ratio for date, ratio in values],
+                index=[date for date, ratio in values]
+            )
+            for ticker, values in result.items()
+        }
+
+        return splits_dict
+
+class Dividend(models.Model):
+    ticker = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        to_field="ticker",
+        db_column="ticker"
+    )
+    date = models.DateField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        unique_together = ("ticker", "date")
+        indexes = [
+            models.Index(fields=["ticker", "date"]),
+        ]
+        verbose_name = "Dividende"
+        verbose_name_plural = "Dividendes"
 
     def __str__(self):
-        return f"Préférences de {self.user.email}"
+        return f"{self.ticker.ticker} - {self.date} : {self.amount}"
+
+    @classmethod
+    def get_dividends_for_ticker(cls, ticker: str) -> pd.DataFrame:
+        dividends = cls.objects.filter(ticker__ticker=ticker)
+
+        if not dividends.exists():
+            return pd.DataFrame()
+
+        df = pd.DataFrame.from_records(
+            dividends.values("date", "amount")
+        )
+        df.set_index("date", inplace=True)
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
+        df = df.astype(float)
+
+        return df.rename(columns={"amount": ticker})
+
+    @classmethod
+    def get_dividends_for_tickers(cls, tickers: list[str]) -> pd.DataFrame:
+        if not tickers:
+            return pd.DataFrame()
+
+        dividends = cls.objects.filter(ticker__ticker__in=tickers)
+
+        if not dividends.exists():
+            return pd.DataFrame()
+
+        df = pd.DataFrame.from_records(
+            dividends.values("date", "ticker__ticker", "amount"),
+            columns=["date", "ticker", "amount"]
+        )
+
+        df_pivot = df.pivot(index="date", columns="ticker", values="amount")
+        df_pivot.index = pd.to_datetime(df_pivot.index)
+        df_pivot.sort_index(inplace=True)
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
+    @classmethod
+    def get_dividends_for_tickers_between_dates(
+        cls,
+        tickers: list[str],
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """
+        Retourne un DataFrame des dividendes pour plusieurs tickers, filtrés entre start_date et end_date inclus.
+
+        Args:
+            tickers (List[str]): Liste de tickers à récupérer.
+            start_date (date or datetime): Date de début du filtrage (inclus).
+            end_date (date or datetime): Date de fin du filtrage (inclus).
+
+        Returns:
+            pd.DataFrame: DataFrame indexé par date (datetime), colonnes tickers, valeurs montants des dividendes.
+        """
+        if not tickers:
+            return pd.DataFrame()
+
+        dividends = cls.objects.filter(
+            ticker__ticker__in=tickers,
+            date__gte=start_date,
+            date__lte=end_date
+        )
+
+        if not dividends.exists():
+            return pd.DataFrame()
+
+        df = pd.DataFrame.from_records(
+            dividends.values("date", "ticker__ticker", "amount"),
+            columns=["date", "ticker", "amount"]
+        )
+
+        df_pivot = df.pivot(index="date", columns="ticker", values="amount")
+        df_pivot.index = pd.to_datetime(df_pivot.index)
+        df_pivot.sort_index(inplace=True)
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
 
 class Portfolio(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -178,6 +459,72 @@ class PortfolioTicker(models.Model):
                         global_ticker.delete()
 
         super().delete(*args, **kwargs)
+
+    @classmethod
+    def get_user_unique_tickers(cls, user) -> list:
+        """
+        Retourne une liste unique des tickers (code) pour un utilisateur,
+        en supprimant les doublons sur (ticker, currency).
+        """
+        tickers = (
+            cls.objects
+            .filter(portfolio__user=user)
+            .values_list('ticker__ticker', 'currency')
+            .distinct()
+        )
+        # On retourne la liste des tickers (tu peux adapter selon ton besoin)
+        return list({ticker for ticker, _ in tickers})
+
+    @classmethod
+    def get_user_tickers_by_currency(cls, user_id: int, portfolio_id: int) -> dict[str, list[str]]:
+        """
+        Retourne les tickers de l'utilisateur groupés par devise
+        pour un portefeuille spécifique.
+        
+        :param user_id: ID de l'utilisateur
+        :param portfolio_id: ID du portefeuille
+        :return: dict avec devise comme clé et liste de tickers comme valeur
+        """
+        tickers = (
+            cls.objects
+            .filter(
+                portfolio__user_id=user_id,
+                portfolio_id=portfolio_id
+            )
+            .values("ticker__ticker", "currency")
+            .distinct()
+        )
+
+        result: dict[str, list[str]] = {}
+        for t in tickers:
+            currency = t["currency"]
+            ticker = t["ticker__ticker"]
+            result.setdefault(currency, []).append(ticker)
+
+        return result
+
+    @classmethod
+    def get_currencies_for_ticker(cls, user_id: int, portfolio_id: int, ticker: str) -> list[str]:
+        """
+        Retourne la liste unique des devises associées à un ticker
+        pour un utilisateur donné et un portefeuille précis.
+
+        :param user_id: id de l'utilisateur
+        :param portfolio_id: id du portefeuille
+        :param ticker: code du ticker (ex: "AAPL")
+        :return: liste des devises (ex: ["USD", "EUR"])
+        """
+        currencies = (
+            cls.objects
+            .filter(
+                portfolio__user_id=user_id,
+                portfolio_id=portfolio_id,
+                ticker__ticker=ticker
+            )
+            .values_list("currency", flat=True)
+            .distinct()
+        )
+        return sorted(list(currencies))
 
 class PortfolioTransaction(models.Model):
     OPERATION_CHOICES = [

@@ -7,7 +7,6 @@ class MyPortfolio(BasePortfolio):
     def my_portfolio(self, portfolio_name: str):
 
         # Tickers
-        self.tickers_prices = self.download_tickers_price([ticker for ticker in self.transactions["ticker"].dropna().unique() if pd.notna(ticker)], self.start_date, self.end_date)
         ticker_invested_amounts = self.tickers_investment_amount_evolution(self.transactions)
         tickers_pru = self.calculate_pru(self.transactions, ticker_invested_amounts)
         tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(ticker_invested_amounts, tickers_pru, self.tickers_prices)
@@ -69,12 +68,12 @@ class MyPortfolio(BasePortfolio):
             )
             fig.show()
 
-        # graphique(tickers_gain_pct, "TWR")
-        # graphique(tickers_gain, "Gains €")
-        # graphique(tickers_valuation, "Valorisation")
         # graphique(ticker_invested_amounts, "Argent investis cumulées")
-        # graphique(self.calculate_dividends(), "Dividendes par tickers")
+        # graphique(tickers_gain, "Gains €")
+        # graphique(tickers_gain_pct, "TWR")
+        # graphique(tickers_valuation, "Valorisation")
         # graphique(tickers_pru, "PRU tickers")
+        # graphique(self.calculate_dividends(), "Dividendes par tickers")
         # graphique(self.compute_cash_evolution(self.transactions)["cash_cumulative"], "Cash")
 
         # graphique(portfolio_valuation, " Valorisation du portefeuille")

@@ -19,14 +19,14 @@ class DollarCostAveraging(BasePortfolio):
         for portfolio in self.portfolio_allocation:
             portfolio_name = portfolio[-1]
             tickers = list(portfolio[0].keys())
-            tickers_prices = self.tickers_prices.loc[:, self.tickers_prices.columns.intersection(tickers)]
+            filtered_tickers_prices = self.tickers_prices.loc[:, self.tickers_prices.columns.intersection(tickers)]
             investment_amounts = {date: (self.money / len(investment_dates)) for date in investment_dates}
             portfolio_transactions = self.initialise_transactions_portfolio(self.create_transaction_dca(investment_amounts, portfolio[0]))
 
             # Tickers
             ticker_invested_amounts = self.tickers_investment_amount_evolution(portfolio_transactions)
             tickers_pru = self.calculate_pru(portfolio_transactions, ticker_invested_amounts)
-            tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(ticker_invested_amounts, tickers_pru, tickers_prices)
+            tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(ticker_invested_amounts, tickers_pru, filtered_tickers_prices)
 
             # Portefeuille
             portfolio_valuation = tickers_valuation.sum(axis=1)
@@ -40,7 +40,7 @@ class DollarCostAveraging(BasePortfolio):
             self.tickers_twr[portfolio_name] = tickers_gain_pct
             self.tickers_gain[portfolio_name] = tickers_gain
             self.tickers_valuation[portfolio_name] = tickers_valuation
-            self.tickers_dividends[portfolio_name] = self.calculate_dividends_evolution(tickers_valuation, tickers_prices)
+            self.tickers_dividends[portfolio_name] = self.calculate_dividends_evolution(tickers_valuation, filtered_tickers_prices)
             self.ticker_invested_amounts[portfolio_name] = ticker_invested_amounts
             self.tickers_pru[portfolio_name] = tickers_pru
 

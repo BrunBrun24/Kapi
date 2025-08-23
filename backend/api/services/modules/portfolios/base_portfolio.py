@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
+from api.models import Dividend, PortfolioTicker, StockPrice
+
 class BasePortfolio:
 
     ########## Pourcentage ##########
@@ -157,7 +159,7 @@ class BasePortfolio:
         assert all(df.dtypes == 'float64') or all(df.dtypes == 'int64'), "Les colonnes du DataFrame doivent contenir des valeurs numériques."
 
         # Télécharger les données de la devise
-        conversion_rate_df = yf.download("EURUSD=X", start=start_date, end=end_date, interval="1d", auto_adjust=True)["Close"]
+        conversion_rate_df = StockPrice.get_open_prices_dataframe_for_tickers(["EURUSD=X"])
 
         # Gérer les dates manquantes dans conversion_rate_df
         all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -386,10 +388,10 @@ class BasePortfolio:
     ##########################
 
     ########## Dividendes ##########
-    @staticmethod
-    def calculate_dividends_evolution(portfolio_gross_price_evolution: pd.DataFrame, ticker_price_df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_dividends_evolution(self, portfolio_gross_price_evolution: pd.DataFrame, ticker_price_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calcule l'évolution des dividendes pour chaque ticker d'un portefeuille, basée sur les prix bruts et les dividendes distribués.
+        Calcule l'évolution des dividendes pour chaque ticker d'un portefeuille, basée sur les prix bruts et les dividendes distribués,
+        en récupérant les dividendes depuis la base de données via les méthodes utilitaires du modèle Dividend.
 
         Args:
             portfolio_gross_price_evolution (pd.DataFrame): DataFrame contenant l'évolution brute des prix des tickers du portefeuille.
@@ -401,33 +403,36 @@ class BasePortfolio:
         assert isinstance(portfolio_gross_price_evolution, pd.DataFrame), "portfolio_gross_price_evolution doit être un DataFrame"
         assert isinstance(ticker_price_df, pd.DataFrame), "ticker_price_df doit être un DataFrame"
 
-        # Vérification des types de données dans les DataFrames
-        assert all(isinstance(date, pd.Timestamp) for date in portfolio_gross_price_evolution.index), "Les index de portfolio_gross_price_evolution doivent être de type pd.Timestamp"
+        assert all(isinstance(date, pd.Timestamp) for date in portfolio_gross_price_evolution.index), "L'index de portfolio_gross_price_evolution doit être composé de pd.Timestamp"
+
+        tickers = list(portfolio_gross_price_evolution.columns)
+
+        # Récupérer tous les dividendes en une seule fois sous forme de DataFrame
+        raw_dividends_df = Dividend.get_dividends_for_tickers_between_dates(tickers, self.start_date, self.end_date)
+
+        if raw_dividends_df.empty:
+            return pd.DataFrame(0, index=portfolio_gross_price_evolution.index, columns=tickers)
 
         # Initialiser le DataFrame des dividendes avec des zéros
-        tickers_dividends = pd.DataFrame(0, index=portfolio_gross_price_evolution.index, columns=portfolio_gross_price_evolution.columns, dtype=float)
+        tickers_dividends = pd.DataFrame(0, index=portfolio_gross_price_evolution.index, columns=tickers, dtype=float)
 
-        for ticker in portfolio_gross_price_evolution.columns:
-            # Téléchargement des données de dividendes
-            stock = yf.Ticker(ticker)
-            dividends = stock.dividends
-
-            # S'assurer que l'index des dividendes est timezone-naive pour comparaison
-            if dividends.index.tz is not None:
-                dividends.index = dividends.index.tz_localize(None)
-
-            # Filtrage des dividendes dans la plage de dates spécifiée
-            dividends = dividends.loc[ticker_price_df.index.min():ticker_price_df.index.max()]
-
-            # Ajout des dividendes au DataFrame, avec propagation aux dates suivantes
-            for date, dividend_amount in dividends.items():
-                if date in tickers_dividends.index:
-                    # Calculer et ajouter le montant du dividende
-                    dividend_amount_added = (dividend_amount * portfolio_gross_price_evolution.at[date, ticker] / ticker_price_df.at[date, ticker])
-                    tickers_dividends.at[date, ticker] += dividend_amount_added
+        for date in raw_dividends_df.index:
+            for ticker in raw_dividends_df.columns:
+                dividend_amount = raw_dividends_df.at[date, ticker]
+                if pd.isna(dividend_amount) or date not in tickers_dividends.index:
+                    continue
+                try:
+                    # Ajuster le dividende en fonction des variations de prix
+                    adjusted_dividend = dividend_amount * (
+                        portfolio_gross_price_evolution.at[date, ticker] / ticker_price_df.at[date, ticker]
+                    )
+                    tickers_dividends.at[date, ticker] += adjusted_dividend
+                except KeyError:
+                    # Cas où la date ou le ticker est manquant dans l’un des DataFrames
+                    continue
 
         return tickers_dividends
-    
+
     @staticmethod
     def calculate_dividend_earn(transactions: pd.DataFrame) -> float:
         """

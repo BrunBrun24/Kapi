@@ -31,28 +31,14 @@ const tabs = [
 
 export function NavigationBar() {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [performanceData, setPerformanceData] = useState<PortfolioData | undefined>();
   const [dataPortfolio, setDataPortfolio] = useState<
     UserPortfolio[] | undefined
   >();
   const [selectedPortfolio, setSelectedPortfolio] = useState<
-    string | undefined
+    UserPortfolio | undefined
   >();
 
   useEffect(() => {
-    const getUserPortfolioPerformance = async () => {
-      try {
-        const res = await api.get("/api/user/portfolio/performance/");
-        const fetchedData = res.data as PortfolioData;
-        setPerformanceData(fetchedData);
-      } catch (error) {
-        console.error(
-          "Erreur lors de la récupération des données des portefeuilles de l'utilisateur",
-          error
-        );
-      }
-    };
-
     const getUserPortfolioData = async () => {
       try {
         const res = await api.get("api/user/portfolio/");
@@ -60,21 +46,20 @@ export function NavigationBar() {
         setDataPortfolio(fetchedData);
 
         const myPortfolio = fetchedData.find(
-          (p: UserPortfolio) => p.name === portfolioGlobalName
+          (p) => p.name === portfolioGlobalName
         );
 
         if (myPortfolio) {
-          setSelectedPortfolio(myPortfolio.id);
+          setSelectedPortfolio(myPortfolio);
         }
       } catch (error) {
         console.error(
-          "Erreur lors de la récupération des données des portefeuilles de l'utilisateur",
+          "Erreur lors de la récupération des portefeuilles",
           error
         );
       }
     };
 
-    getUserPortfolioPerformance();
     getUserPortfolioData();
   }, []);
 
@@ -108,8 +93,11 @@ export function NavigationBar() {
       {activeTab !== "dashboard" && (
         <div className="p-4">
           <Select
-            value={selectedPortfolio}
-            onValueChange={(value) => setSelectedPortfolio(value)}
+            value={selectedPortfolio?.id}
+            onValueChange={(id) => {
+              const found = dataPortfolio?.find((p) => p.id === id);
+              if (found) setSelectedPortfolio(found);
+            }}
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Sélectionner un portefeuille" />
@@ -117,13 +105,24 @@ export function NavigationBar() {
             <SelectContent>
               <SelectGroup>
                 <SelectLabel>Portefeuilles</SelectLabel>
-                <SelectItem value={portfolioGlobalName}>Tous</SelectItem>
 
-                {dataPortfolio?.map((portfolio) => (
-                  <SelectItem key={portfolio.id} value={portfolio.id}>
-                    {portfolio.name}
-                  </SelectItem>
-                ))}
+                {/* Tous (My Portfolio) */}
+                {dataPortfolio
+                  ?.filter((p) => p.name === portfolioGlobalName)
+                  .map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      Tous
+                    </SelectItem>
+                  ))}
+
+                {/* Autres portefeuilles */}
+                {dataPortfolio
+                  ?.filter((p) => p.name.toLowerCase() !== portfolioGlobalName)
+                  .map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -132,15 +131,23 @@ export function NavigationBar() {
 
       {/* Contenu dynamique */}
       <div className="p-4">
-        {activeTab === "dashboard" && <DashboardPage performanceData={performanceData} />}
+        {activeTab === "dashboard" && (
+          <DashboardPage selectedPortfolio={selectedPortfolio} />
+        )}
         {activeTab === "performance" && (
-          <PerformancePage performanceData={performanceData} portfolioId={selectedPortfolio} />
+          <PerformancePage
+            selectedPortfolio={selectedPortfolio}
+          />
         )}
         {activeTab === "titres" && (
-          <TitresPage performanceData={performanceData} portfolioId={selectedPortfolio} />
+          <TitresPage
+            portfolioId={selectedPortfolio}
+          />
         )}
         {activeTab === "dividendes" && (
-          <DividendsPage performanceData={performanceData} portfolioId={selectedPortfolio} />
+          <DividendsPage
+            portfolioId={selectedPortfolio}
+          />
         )}
       </div>
     </div>

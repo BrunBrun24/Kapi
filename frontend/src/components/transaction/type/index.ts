@@ -37,6 +37,7 @@ export interface Ticker {
 export interface TickerNotInPortfolio {
   ticker: string;
   name: string;
+  currencies: string[];
 }
 
 export interface Currency {

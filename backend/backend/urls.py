@@ -19,8 +19,8 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
-    AddPortfolioTickerView, UserPortfolios, UserPortfoliosPerformance, UserTransactionsView, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
-    CreateUserView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView, TickerListView
+    AddPortfolioTickerView, PortfolioPerformanceDynamicView, PortfolioTickerCurrenciesView, UserPortfolioPerformanceRepartitionAllPortfolio, UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
+    CreateUserView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView
 )
 
 urlpatterns = [
@@ -39,9 +39,10 @@ urlpatterns = [
 
     # Portefeuille Ticker
     path('api/portfolio/ticker/', AddPortfolioTickerView.as_view()),
-    path("api/portfolio/<int:portfolio_id>/ticker/<str:ticker>/delete/", DeletePortfolioTickerView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/ticker/<str:ticker>/<str:currency>/delete/", DeletePortfolioTickerView.as_view()),
     path('api/portfolio/<int:portfolio_id>/tickers/', PortfolioTickersView.as_view()),
     path('api/portfolio/<int:portfolio_id>/available-tickers/', PortfolioAvailableTickersView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/ticker/<str:ticker>/currencies/", PortfolioTickerCurrenciesView.as_view()),
 
     # Transaction
     path("api/portfolio-transaction/create/", PortfolioTransactionCreateView .as_view()),
@@ -51,7 +52,12 @@ urlpatterns = [
     path("api/upload-excel/transaction/", ExcelPortfolioTransactionUploadView.as_view()),
 
     # Portefeuille Performance
-    path("api/user/portfolio/performance/", UserPortfoliosPerformance.as_view()),
+    # # # # path("api/user/portfolio/performance/", UserPortfoliosPerformance.as_view()),
+    path("api/user/portfolio/utilisateur/", UserPortfolioPerformanceSummary.as_view()),
+
+    path("api/portfolio-performance/<int:portfolio_id>/", PortfolioPerformanceDynamicView.as_view()),
+    path("api/portfolio-performance/portfolio/repartition/", UserPortfolioPerformanceRepartitionAllPortfolio.as_view()),
+    path("api/portfolio-performance/twr/<str:start_date>/<int:portfolio_id>/", UserPortfolioPerformanceTwrDate.as_view()),
 
     # Company
     # path('api/tickers/', TickerListView.as_view()),

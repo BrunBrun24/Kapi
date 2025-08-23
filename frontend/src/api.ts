@@ -12,18 +12,19 @@ api.interceptors.request.use(async (config) => {
   let token = localStorage.getItem(ACCESS_TOKEN);
   const refreshToken = localStorage.getItem(REFRESH_TOKEN);
 
-  // Vérification de l'inactivité
-  const lastActivity = localStorage.getItem("last_activity");
-  const now = Date.now();
-  const MAX_INACTIVITY = 15 * 60 * 1000; // 15 minutes
+  /* ----- ⛔️ Bloc inactivité supprimé ----- */
+  // const lastActivity = localStorage.getItem("last_activity");
+  // const now = Date.now();
+  // const MAX_INACTIVITY = 15 * 60 * 1000;
+  //
+  // if (lastActivity && now - parseInt(lastActivity, 10) > MAX_INACTIVITY) {
+  //   console.warn("⏳ Inactivité détectée : déconnexion");
+  //   localStorage.clear();
+  //   window.location.href = "/login";
+  //   return Promise.reject("Session expirée pour inactivité");
+  // }
 
-  if (lastActivity && now - parseInt(lastActivity, 10) > MAX_INACTIVITY) {
-    console.warn("⏳ Inactivité détectée : déconnexion");
-    localStorage.clear();
-    window.location.href = "/login";
-    return Promise.reject("Session expirée pour inactivité");
-  }
-
+  // 🔄 Rafraîchissement du token si nécessaire
   if (token && isTokenExpired(token) && refreshToken) {
     try {
       const res = await axios.post(`${fallbackApiUrl}/api/token/refresh/`, {
@@ -45,6 +46,11 @@ api.interceptors.request.use(async (config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  /* ➕ (facultatif) : tu peux encore mettre à jour last_activity
+     pour de futures statistiques, sans jamais déconnecter :
+  */
+  // localStorage.setItem("last_activity", Date.now().toString());
 
   return config;
 });
