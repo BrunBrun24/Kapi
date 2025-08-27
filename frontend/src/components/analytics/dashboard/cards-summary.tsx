@@ -31,6 +31,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
   const [twr, setTwr] = useState<Array<Record<string, number>>>([]);
   const [cagr, setCagr] = useState<Record<string, Record<string, number | null>>>({});
   const [fees, setFees] = useState<Array<Record<string, number>>>([]);
+  const [dividendEarn, setDividendEarn] = useState<Array<Record<string, number>>>([]);
   const [dividendYield, setDividendYield] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
         const res = await api.get(`/api/portfolio-performance/${selectedPortfolio.id}/`, {
           params: {
             fields:
-              "portfolio_valuation,portfolio_twr,portfolio_cagr,portfolio_fees,portfolio_dividend_yield,portfolio_invested_amounts,portfolio_gain",
+              "portfolio_valuation,portfolio_twr,portfolio_cagr,portfolio_fees,portfolio_dividend_earn,portfolio_dividend_yield,portfolio_invested_amounts,portfolio_gain",
           },
         });
         const data = res.data;
@@ -50,6 +51,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
         setTwr(data.portfolio_twr || []);
         setCagr(data.portfolio_cagr || {});
         setFees(data.portfolio_fees || []);
+        setDividendEarn(data.portfolio_dividend_earn || {});
         setDividendYield(data.portfolio_dividend_yield || {});
         setPortfolioInvestedAmounts(data.portfolio_invested_amounts || []);
         setPortfolioGain(data.portfolio_gain || []);
@@ -70,6 +72,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
   const formattedCagr = rawCagr !== null ? rawCagr.toFixed(2) : "";
 
   const lastFees = fees?.at(-1)?.[portfolioGlobalName] ?? 0;
+  // const rawDividendEarn = dividendEarn?.at(-1)?.[portfolioGlobalName] ?? 0;
   const rawDividendYield = dividendYield?.[portfolioGlobalName] ?? 0;
 
   return (

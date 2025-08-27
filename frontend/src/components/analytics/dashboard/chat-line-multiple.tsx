@@ -22,6 +22,8 @@ import {
 } from "@/components/analytics/type";
 import { useEffect, useState } from "react";
 import api from "@/api";
+import { Badge } from "@/components/ui/badge";
+import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
 
 const chartConfig = {
   desktop: {
@@ -45,9 +47,8 @@ export function ChartLineMultiple({
   height,
   selectedPortfolio,
 }: ChartLineMultipleProps) {
-
   const [twr, setTwr] = useState([]);
-  
+
   useEffect(() => {
     if (!selectedPortfolio?.id) return;
 
@@ -71,11 +72,31 @@ export function ChartLineMultiple({
     fetchData();
   }, [selectedPortfolio]);
 
+  const twrValue = twr.at(-1)?.[portfolioGlobalName];
+  const rawTwr: number | null = typeof twrValue === "number" ? twrValue : null;
+  const formattedTwr = rawTwr !== null ? rawTwr.toFixed(2) : "";
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-2xl font-bold">{title}</CardTitle>
+        {formattedTwr && (
+          <Badge
+            variant="outline"
+            className={`flex items-center gap-1 ${
+              rawTwr !== null && rawTwr >= 0 ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {rawTwr !== null && rawTwr >= 0 ? (
+              <IconTrendingUp size={30} />
+            ) : (
+              <IconTrendingDown size={30} />
+            )}
+            {formattedTwr}%
+          </Badge>
+        )}
       </CardHeader>
+
       <CardContent>
         <ChartContainer
           config={chartConfig}

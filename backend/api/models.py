@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.db.models import Sum
 import pandas as pd
+from django.db.models import Min, Max
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -219,17 +220,76 @@ class StockPrice(models.Model):
 
         # Transformer en DataFrame
         df = pd.DataFrame.from_records(
-            prices.values('date', 'ticker_id', 'open_price')
+            prices.values('date', 'ticker', 'open_price')
         )
 
         # Pivot pour format souhaité
-        df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
+        df_pivot = df.pivot(index='date', columns='ticker', values='open_price')
         df_pivot.sort_index(inplace=True)
     
         # Conversion en float pour éviter les problèmes Decimal
         df_pivot = df_pivot.astype(float)
 
         return df_pivot
+
+    @classmethod
+    def convert_dataframe_to_currency(cls, df: pd.DataFrame, target_currency: str) -> pd.DataFrame:
+        """
+        Convertit les colonnes (tickers) d'un DataFrame vers la devise cible (USD ou EUR).
+
+        :param df: DataFrame avec colonnes = tickers, index = dates
+        :param target_currency: "USD" ou "EUR"
+        :return: DataFrame converti
+        """
+        if df.empty:
+            return df
+
+        if target_currency not in ["USD", "EUR"]:
+            raise ValueError("La devise cible doit être USD ou EUR")
+
+        # Récupérer les devises de chaque ticker
+        tickers_currencies = dict(
+            Company.objects.filter(ticker__in=df.columns)
+            .values_list("ticker", "currency")
+        )
+
+        # Récupérer le taux de change EUR/USD depuis StockPrice
+        fx_ticker = "EURUSD=X"
+        fx_prices = (
+            cls.objects.filter(ticker_id=fx_ticker, date__in=df.index)
+            .values("date", "open_price")
+        )
+        if not fx_prices.exists():
+            raise ValueError("Pas de données de change disponibles pour EURUSD=X")
+
+        fx_df = pd.DataFrame.from_records(fx_prices)
+        fx_df.set_index("date", inplace=True)
+        fx_df.sort_index(inplace=True)
+        fx_df = fx_df.astype(float)
+
+        # Assurer qu’on aligne les dates du FX avec df
+        fx_df = fx_df.reindex(df.index).ffill().bfill()
+
+        # Conversion colonne par colonne
+        converted_df = df.copy()
+        for ticker in df.columns:
+            ticker_currency = tickers_currencies.get(ticker)
+
+            if ticker_currency is None:
+                continue  # sécurité : ticker absent de Company
+
+            if ticker_currency == target_currency:
+                continue  # rien à faire
+
+            if ticker_currency == "USD" and target_currency == "EUR":
+                # USD → EUR : diviser par le taux EURUSD
+                converted_df[ticker] = df[ticker] / fx_df["open_price"]
+
+            elif ticker_currency == "EUR" and target_currency == "USD":
+                # EUR → USD : multiplier par le taux EURUSD
+                converted_df[ticker] = df[ticker] * fx_df["open_price"]
+
+        return converted_df
 
 class StockSplit(models.Model):
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
@@ -279,6 +339,56 @@ class StockSplit(models.Model):
         }
 
         return splits_dict
+
+    @classmethod
+    def apply_splits(cls, transactions_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Ajuste les colonnes 'quantity' et 'stock_price' en fonction des splits stockés en base de données.
+        """
+        if transactions_df.empty:
+            return transactions_df
+
+        # Vérifie colonnes
+        required_cols = {"ticker", "quantity", "stock_price"}
+        if not required_cols.issubset(transactions_df.columns):
+            raise ValueError(f"Le DataFrame doit contenir les colonnes {required_cols}")
+
+        # Récupération des splits depuis la base
+        tickers = transactions_df["ticker"].dropna().unique().tolist()
+        splits_dict = cls.get_splits_from_db(tickers)
+
+        def ajuster_ligne(row):
+            ticker = row["ticker"]
+            date_transaction = pd.to_datetime(row.name)  # Index = datetime
+            quantite = row["quantity"]
+            prix = row["stock_price"]
+
+            if ticker not in splits_dict:
+                return pd.Series({"quantity": quantite, "stock_price": prix})
+
+            splits = splits_dict[ticker]
+
+            # Splits après la date de transaction
+            splits_apres = splits[splits.index > date_transaction]
+            facteur_split = splits_apres.prod() if not splits_apres.empty else 1.0
+
+            return pd.Series({
+                "quantity": quantite * facteur_split,
+                "stock_price": prix / facteur_split
+            })
+
+        ajustements = transactions_df.apply(
+            lambda row: ajuster_ligne(row) if pd.notna(row["ticker"]) else pd.Series({
+                "quantity": row["quantity"],
+                "stock_price": row["stock_price"]
+            }),
+            axis=1
+        )
+
+        transactions_df["quantity"] = ajustements["quantity"]
+        transactions_df["stock_price"] = ajustements["stock_price"]
+
+        return transactions_df
 
 class Dividend(models.Model):
     ticker = models.ForeignKey(
@@ -401,6 +511,17 @@ class Portfolio(models.Model):
             # Crée PORTFOLIO_MAIN_NAME s’il n’existe pas encore pour cet utilisateur
             Portfolio.objects.get_or_create(user=self.user, name=PORTFOLIO_MAIN_NAME)
 
+    @classmethod
+    def get_user_portfolio_name(cls, user_id: int, portfolio_id: int) -> str | None:
+        """
+        Retourne le nom d'un portefeuille pour un utilisateur donné à partir de leurs IDs.
+        """
+        try:
+            portfolio = cls.objects.get(pk=portfolio_id, user_id=user_id)
+            return portfolio.name
+        except cls.DoesNotExist:
+            return None
+
 class PortfolioTicker(models.Model):
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
@@ -459,6 +580,20 @@ class PortfolioTicker(models.Model):
                         global_ticker.delete()
 
         super().delete(*args, **kwargs)
+
+    @classmethod
+    def get_all_unique_tickers(cls) -> list:
+        """
+        Retourne une liste unique des tickers (code) pour TOUS les utilisateurs,
+        en supprimant les doublons sur (ticker, currency).
+        """
+        tickers = (
+            cls.objects
+            .values_list('ticker__ticker', 'currency')
+            .distinct()
+        )
+        # On retourne juste les tickers uniques
+        return list({ticker for ticker, _ in tickers})
 
     @classmethod
     def get_user_unique_tickers(cls, user) -> list:
@@ -671,17 +806,145 @@ class PortfolioTransaction(models.Model):
 
         super().delete(*args, **kwargs)
 
+    @classmethod
+    def get_transactions_dataframe(cls, user, portfolio, currency: str) -> pd.DataFrame:
+        """
+        Retourne un DataFrame de toutes les transactions d'un portefeuille
+        pour un utilisateur donné et une devise donnée.
+
+        Index = date
+        Colonnes = id, portfolio_ticker_id, operation, amount, fees,
+                   stock_price, quantity, currency, ticker
+        """
+        qs = (
+            cls.objects.filter(
+                user=user,
+                portfolio=portfolio,
+                currency=currency,
+            )
+            .select_related("portfolio_ticker__ticker")
+            .order_by("date", "id")
+        )
+
+        if not qs.exists():
+            return pd.DataFrame()
+
+        df = pd.DataFrame.from_records(
+            qs.values(
+                "id",
+                "portfolio_ticker_id",
+                "operation",
+                "amount",
+                "fees",
+                "stock_price",
+                "quantity",
+                "currency",
+                "date",
+                ticker=models.F("portfolio_ticker__ticker__ticker"),
+            )
+        )
+
+        df.set_index("date", inplace=True)
+        df.index = pd.to_datetime(df.index)
+
+        # Convertir les Decimal en float
+        for col in ["amount", "fees", "stock_price", "quantity"]:
+            df[col] = df[col].astype(float)
+
+        return StockSplit.apply_splits(df)
+
+    @classmethod
+    def get_transactions_in_eur(cls, user, portfolio) -> pd.DataFrame:
+        """
+        Retourne un DataFrame de toutes les transactions d'un portefeuille
+        d'un utilisateur, converties en EUR (basé sur le ticker EURUSD=X).
+        """
+        qs = (
+            cls.objects.filter(user=user, portfolio=portfolio)
+            .select_related("portfolio_ticker__ticker")
+            .order_by("date", "id")
+        )
+        if not qs.exists():
+            return pd.DataFrame()
+
+        # --- Transactions en DataFrame ---
+        df = pd.DataFrame.from_records(
+            qs.values(
+                "id", "portfolio_ticker_id", "operation", "amount", "fees",
+                "stock_price", "quantity", "currency", "date",
+                ticker=models.F("portfolio_ticker__ticker__ticker"),
+            )
+        )
+        df.set_index("date", inplace=True)
+        df.index = pd.to_datetime(df.index)
+
+        # Convertir les Decimal en float
+        for col in ["amount", "fees", "stock_price", "quantity"]:
+            df[col] = df[col].astype(float)
+
+        # --- Récupération des taux EURUSD ---
+        fx_prices = StockPrice.objects.filter(
+            ticker_id="EURUSD=X", date__in=df.index
+        ).values("date", "open_price")
+
+        if not fx_prices.exists():
+            raise ValueError("Pas de données de change disponibles pour EURUSD=X")
+
+        fx_df = pd.DataFrame.from_records(fx_prices)
+        fx_df.set_index("date", inplace=True)
+        fx_df.sort_index(inplace=True)
+        fx_df = fx_df.astype(float)
+
+        # Assurer couverture de toutes les dates (ffill/bfill pour trous)
+        fx_df = fx_df.reindex(df.index).ffill().bfill()
+
+        # --- Conversion en EUR ---
+        def convert_row(row):
+            if row["currency"] == "EUR":
+                return row
+            elif row["currency"] == "USD":
+                fx_rate = fx_df.loc[row.name, "open_price"]
+                # USD → EUR : diviser par le taux
+                row["amount"] = row["amount"] / fx_rate
+                row["fees"] = row["fees"] / fx_rate
+                if row["stock_price"]:
+                    row["stock_price"] = row["stock_price"] / fx_rate
+            return row
+
+        df = df.apply(convert_row, axis=1)
+        df["currency"] = "EUR"
+
+        return df
+
+    @classmethod
+    def first_and_last_date(cls, user, portfolio) -> tuple[datetime | None, datetime | None]:
+        """
+        Retourne la première et la dernière date de transaction d'un utilisateur
+        dans un portefeuille donné. Retourne (None, None) si aucune transaction.
+        """
+        result = (
+            cls.objects.filter(user=user, portfolio=portfolio)
+            .aggregate(
+                first_date=Min("date"),
+                last_date=Max("date")
+            )
+        )
+
+        first_date = pd.to_datetime(result["first_date"]) if result["first_date"] else None
+        last_date = pd.to_datetime(result["last_date"]) if result["last_date"] else None
+
+        return first_date, last_date
+
 class PortfolioPerformance(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
     calculated_at = models.DateTimeField(auto_now=True)
 
     tickers_invested_amounts = models.JSONField()
-    tickers_sold_amounts = models.JSONField()
     tickers_twr = models.JSONField()
     tickers_gain = models.JSONField()
     tickers_valuation = models.JSONField()
-    ticker_invested_amounts = models.JSONField()
+    tickers_invested_amounts = models.JSONField()
     tickers_dividends = models.JSONField()
     tickers_pru = models.JSONField()
 

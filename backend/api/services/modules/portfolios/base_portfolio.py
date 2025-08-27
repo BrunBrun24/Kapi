@@ -1,11 +1,13 @@
 import numpy as np
-import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
-from api.models import Dividend, PortfolioTicker, StockPrice
+from api.models import Dividend
 
 class BasePortfolio:
+    def __init__(self, start_date: datetime, end_date: datetime):
+        self.start_date = start_date
+        self.end_date = end_date
 
     ########## Pourcentage ##########
     @staticmethod
@@ -109,75 +111,117 @@ class BasePortfolio:
 
 
     ########## Prix ##########
-    def download_tickers_price(self, tickers: list, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+    def compute_cash_evolution(self, transactions_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Télécharge les prix de clôture des actions spécifiées sur une période donnée.
+        Calcule l’évolution journalière du cash du portefeuille à partir des
+        transactions, en tenant compte des achats, ventes, dépôts, retraits,
+        dividendes et intérêts, sur toute la période spécifiée.
 
-        Args:
-            tickers (list): Liste des symboles boursiers à télécharger.
-            start_date (datetime): Date de début du téléchargement.
-            end_date (datetime): Date de fin du téléchargement.
+        Le résultat contient deux séries :
+        - les flux journaliers de cash ;
+        - le cash cumulé jour après jour.
 
-        Returns:
-            pd.DataFrame: Un DataFrame contenant les prix de clôture des actions spécifiées,
-            avec les dates manquantes complétées et les prix éventuellement convertis en EUR.
+        Parameters
+        ----------
+        transactions_df : pd.DataFrame
+            DataFrame indexé par date, contenant au minimum les colonnes :
+            - `'operation'` : type d’opération (e.g. `'buy'`, `'sell'`, `'deposit'`, etc.)
+            - `'amount'` : montant brut de l’opération
+            - `'fees'` : frais associés à la transaction
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame indexé par date (`DatetimeIndex` quotidien) avec deux colonnes :
+            - `'cash_flow'` : flux net de cash pour chaque jour (somme des opérations)
+            - `'cash_cumulative'` : cumul des flux de cash depuis le début de la période
         """
-        assert isinstance(tickers, list) and all(isinstance(ticker, str) for ticker in tickers), "tickers doit être une liste de chaînes de caractères"
-        assert isinstance(start_date, datetime), "start_date doit être un objet datetime"
-        assert isinstance(end_date, datetime), "end_date doit être un objet datetime"
 
-        # Téléchargement des données pour plusieurs tickers ou un seul
-        if len(tickers) > 1:
-            ticker_prices = yf.download(tickers, start=start_date, end=end_date, interval="1d", auto_adjust=True)["Close"].ffill().bfill()
-        else:
-            ticker_prices = pd.DataFrame()
-            for symbol in tickers:
-                ticker_prices[symbol] = yf.download(symbol, start=start_date, end=end_date, interval="1d", auto_adjust=True)["Close"].ffill().bfill()
+        def calculate_cash_flow(row):
+            operation = row['operation']
+            amount = row['amount']
+            fees = row['fees']
 
-        # Gérer les dates manquantes dans ticker_prices
-        all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-        ticker_prices = ticker_prices.reindex(all_dates).ffill().bfill()
+            if operation == 'buy':
+                return -(amount + fees)
+            elif operation == 'sell':
+                return amount - fees
+            elif operation in ['deposit', 'dividend', 'interest']:
+                return (amount - fees)
+            elif operation == 'withdrawal':
+                return -amount
+            else:
+                return 0
 
-        return self.convert_currency_usd_to_eur(ticker_prices, start_date, end_date)
+        # Assure-toi que l'index est datetime
+        transactions_df.index = pd.to_datetime(transactions_df.index)
 
-    @staticmethod
-    def convert_currency_usd_to_eur(df: pd.DataFrame, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+        # Calcul du cash flow par transaction
+        transactions_df['cash_flow'] = transactions_df.apply(calculate_cash_flow, axis=1)
+
+        # Somme des cash flows par date (l'index)
+        cash_by_date = transactions_df['cash_flow'].groupby(transactions_df.index).sum()
+
+        # Création de l'index complet de dates
+        full_date_index = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+
+        # Réindexer pour avoir toutes les dates, remplissage des NaN par 0
+        cash_by_date = cash_by_date.reindex(full_date_index, fill_value=0)
+
+        # Calcul cumulatif du cash
+        cash_cumulative = cash_by_date.cumsum()
+
+        # Création du DataFrame final
+        result_df = pd.DataFrame({
+            'cash_flow': cash_by_date,
+            'cash_cumulative': cash_cumulative
+        })
+
+        result_df.index.name = 'index'
+
+        return result_df
+
+    def compute_fees_evolution(self, transactions_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Convertit les valeurs d'un DataFrame d'une devise à une autre sur une période spécifiée.
+        Calcule l'évolution quotidienne des frais de transaction sur toute la période
+        du portefeuille, ainsi que leur cumul.
 
-        Args:
-            df (pd.DataFrame): DataFrame contenant les données financières en différentes devises.
-            start_date (datetime): Date de début.
-            end_date (datetime): Date de fin'.
+        Cette méthode :
+        - agrège les frais journaliers à partir des opérations financières ;
+        - remplit les jours sans transactions avec zéro ;
+        - calcule les frais cumulés jour après jour.
 
-        Returns:
-            pd.DataFrame: Un DataFrame avec les valeurs converties en utilisant le taux de change correspondant.
+        Parameters
+        ----------
+        transactions_df : pd.DataFrame
+            DataFrame indexé par date contenant une colonne `'fees'` représentant
+            les frais associés à chaque transaction.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame indexé par date (`DatetimeIndex`) avec deux colonnes :
+            - `'daily_fees'` : total des frais facturés pour chaque jour ;
+            - `'cumulative_fees'` : somme cumulée des frais depuis `self.start_date`.
         """
-        assert isinstance(df, pd.DataFrame), f"df doit être un DataFrame: ({type(df)})"
-        assert isinstance(start_date, datetime), f"start_date doit être un objet datetime: ({type(start_date)})"
-        assert isinstance(end_date, datetime), f"end_date doit être un objet datetime: ({type(end_date)})"
-        assert all(df.dtypes == 'float64') or all(df.dtypes == 'int64'), "Les colonnes du DataFrame doivent contenir des valeurs numériques."
 
-        # Télécharger les données de la devise
-        conversion_rate_df = StockPrice.get_open_prices_dataframe_for_tickers(["EURUSD=X"])
+        # 1) Créer l’index journalier de référence
+        date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
 
-        # Gérer les dates manquantes dans conversion_rate_df
-        all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-        conversion_rate_df = conversion_rate_df.reindex(all_dates).ffill().bfill()
+        # 2) Frais journaliers (0 € pour les jours sans opération)
+        daily_fees = (
+            transactions_df['fees']     # on ne garde que la colonne 'fees'
+            .resample('D')              # agrégation quotidienne
+            .sum()                      # si plusieurs lignes le même jour
+            .reindex(date_range, fill_value=0.0)  # complétion des dates manquantes
+        )
 
-        # Filtrer les colonnes de df pour ne garder que celles qui doivent être converties
-        tickers_to_convert = [ticker for ticker in df.columns if "." not in ticker]
-        df_filtered = df.loc[:, df.columns.intersection(tickers_to_convert)]
+        # 3) Mettre en DataFrame et ajouter la cumulative
+        fees_evolution_df = daily_fees.to_frame(name='daily_fees')
+        fees_evolution_df['cumulative_fees'] = fees_evolution_df['daily_fees'].cumsum()
 
-        # Aligner et diviser les valeurs pour la conversion
-        df_filtered = df_filtered.divide(conversion_rate_df["EURUSD=X"], axis=0)
+        return fees_evolution_df
 
-        # Remplacer les valeurs dans df
-        common_columns = df.columns.intersection(df_filtered.columns)
-        df[common_columns] = df_filtered[common_columns]
-
-        return df
-    
     def download_tickers_sma(self, start_date: datetime, end_date: datetime, tickers: list, sma: list) -> pd.DataFrame:
         """
         Calcule la moyenne mobile simple (SMA) pour chaque ticker dans le DataFrame des prix des tickers
