@@ -226,6 +226,7 @@ class StockPrice(models.Model):
         # Pivot pour format souhaité
         df_pivot = df.pivot(index='date', columns='ticker', values='open_price')
         df_pivot.sort_index(inplace=True)
+        df_pivot.index = pd.to_datetime(df_pivot.index)
     
         # Conversion en float pour éviter les problèmes Decimal
         df_pivot = df_pivot.astype(float)

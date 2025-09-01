@@ -703,8 +703,7 @@ class UserPortfolioPerformanceTwrDate(APIView):
         if not isinstance(tickers_valuations, dict):
             return Response({"error": "tickers_valuations must be a dictionary"}, status=400)
         
-        tickers_prices = StockPrice.get_open_prices_dataframe_for_user_start_date(request.user, start_date)
-        portefeuille = PortefeuilleBourse(user_id=request.user, portfolio_id=portfolio_id, tickers_prices=tickers_prices, start_date=start_date, tickers_valuations=tickers_valuations)
+        portefeuille = PortefeuilleBourse(user=request.user, portfolios=portfolio_id, start_date=start_date, tickers_valuations=tickers_valuations)
         
         return Response(portefeuille.get_twr())
 

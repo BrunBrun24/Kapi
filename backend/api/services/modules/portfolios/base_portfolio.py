@@ -5,9 +5,6 @@ from datetime import datetime, timedelta
 from api.models import Dividend
 
 class BasePortfolio:
-    def __init__(self, start_date: datetime, end_date: datetime):
-        self.start_date = start_date
-        self.end_date = end_date
 
     ########## Pourcentage ##########
     @staticmethod
@@ -101,7 +98,7 @@ class BasePortfolio:
         assert isinstance(invested_money, (int, float)), "invested_money doit être un nombre (int ou float)"
  
         # Calcul de l'évolution en pourcentage par rapport à l'argent investi
-        percentage_change = (((invested_money + portfolio_profit_loss_evolution) - invested_money) / invested_money) * 100
+        percentage_change = round((((invested_money + portfolio_profit_loss_evolution) - invested_money) / invested_money) * 100, 2)
 
         # Création d'un DataFrame pour retourner les résultats
         portfolio_percentage_change = pd.DataFrame(percentage_change, columns=['PercentageChange'])
