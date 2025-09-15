@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Type
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -8,6 +9,7 @@ from django.conf import settings
 from django.db.models import Sum
 import pandas as pd
 from django.db.models import Min, Max
+from django.core.exceptions import ObjectDoesNotExist
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -153,6 +155,9 @@ class StockPrice(models.Model):
         # Étape 4 : pivot pour mettre les tickers en colonnes
         df_pivot = df.pivot(index='date', columns='ticker_id', values='open_price')
         df_pivot.sort_index(inplace=True)
+
+        # Forcer l'index en pd.Timestamp
+        df_pivot.index = pd.to_datetime(df_pivot.index)
     
         # Conversion en float pour éviter les problèmes Decimal
         df_pivot = df_pivot.astype(float)
@@ -234,6 +239,39 @@ class StockPrice(models.Model):
         return df_pivot
 
     @classmethod
+    def get_open_prices_dataframe_for_ticker(cls, ticker: str) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les open_price pour le ticker passé en paramètre,
+        indexé par date.
+        
+        :param ticker: ticker à récupérer
+        :return: DataFrame avec index date et une colonne = ticker
+        """
+        if not ticker:
+            return pd.DataFrame()
+
+        # Filtrer les prix pour le ticker donné
+        prices = cls.objects.filter(ticker_id=ticker)
+
+        if not prices.exists():
+            return pd.DataFrame()
+
+        # Transformer en DataFrame
+        df = pd.DataFrame.from_records(
+            prices.values('date', 'ticker', 'open_price')
+        )
+
+        # Pivot pour avoir une colonne avec le ticker
+        df_pivot = df.pivot(index='date', columns='ticker', values='open_price')
+        df_pivot.sort_index(inplace=True)
+        df_pivot.index = pd.to_datetime(df_pivot.index)
+
+        # Conversion en float
+        df_pivot = df_pivot.astype(float)
+
+        return df_pivot
+
+    @classmethod
     def convert_dataframe_to_currency(cls, df: pd.DataFrame, target_currency: str) -> pd.DataFrame:
         """
         Convertit les colonnes (tickers) d'un DataFrame vers la devise cible (USD ou EUR).
@@ -291,6 +329,70 @@ class StockPrice(models.Model):
                 converted_df[ticker] = df[ticker] * fx_df["open_price"]
 
         return converted_df
+
+    @classmethod
+    def get_price_on_date(cls, ticker: str, date: datetime, target_currency: str) -> float:
+        """
+        Retourne le prix d'ouverture d'un ticker donné à une date précise (ou la dernière date dispo avant),
+        converti dans la devise cible (USD ou EUR).
+        """
+
+        if target_currency not in ["USD", "EUR"]:
+            raise ValueError("La devise cible doit être USD ou EUR")
+
+        # Récupération du dernier prix <= date
+        stock = (
+            cls.objects.filter(ticker_id=ticker, date__lte=date)
+            .order_by("-date")
+            .first()
+        )
+        if not stock:
+            raise ValueError(f"Pas de prix disponible pour {ticker} avant ou à la date {date}")
+
+        price = float(stock.open_price)
+
+        # Récupération de la devise du ticker
+        try:
+            ticker_currency = Company.objects.get(ticker=ticker).currency
+        except ObjectDoesNotExist:
+            raise ValueError(f"Ticker {ticker} introuvable dans Company")
+
+        return StockPrice.convert_price(price, ticker_currency, target_currency, date)
+    
+    @classmethod
+    def convert_price(cls, price: float, from_currency: str, to_currency: str, date: datetime) -> float:
+        """
+        Convertit un prix d'une devise vers une autre à une date donnée.
+
+        :param price: montant à convertir
+        :param from_currency: devise d'origine ("USD" ou "EUR")
+        :param to_currency: devise cible ("USD" ou "EUR")
+        :param date: date de référence pour le taux de change
+        :return: prix converti
+        """
+        if from_currency == to_currency:
+            return price
+
+        fx_ticker = "EURUSD=X"
+
+        # Récupérer le taux de change le plus proche (<= date)
+        fx_obj = (
+            cls.objects.filter(ticker_id=fx_ticker, date__lte=date)
+            .order_by("-date")
+            .first()
+        )
+        if not fx_obj:
+            raise ValueError(f"Aucun taux de change trouvé pour {fx_ticker} avant {date}")
+
+        fx_rate = float(fx_obj.open_price)
+
+        if from_currency == "USD" and to_currency == "EUR":
+            return price / fx_rate
+        elif from_currency == "EUR" and to_currency == "USD":
+            return price * fx_rate
+
+        raise ValueError(f"Conversion non supportée : {from_currency} → {to_currency}")
+
 
 class StockSplit(models.Model):
     ticker = models.ForeignKey(Company, on_delete=models.CASCADE, to_field='ticker', db_column='ticker')
@@ -460,14 +562,6 @@ class Dividend(models.Model):
     ) -> pd.DataFrame:
         """
         Retourne un DataFrame des dividendes pour plusieurs tickers, filtrés entre start_date et end_date inclus.
-
-        Args:
-            tickers (List[str]): Liste de tickers à récupérer.
-            start_date (date or datetime): Date de début du filtrage (inclus).
-            end_date (date or datetime): Date de fin du filtrage (inclus).
-
-        Returns:
-            pd.DataFrame: DataFrame indexé par date (datetime), colonnes tickers, valeurs montants des dividendes.
         """
         if not tickers:
             return pd.DataFrame()
@@ -481,12 +575,15 @@ class Dividend(models.Model):
         if not dividends.exists():
             return pd.DataFrame()
 
-        df = pd.DataFrame.from_records(
-            dividends.values("date", "ticker__ticker", "amount"),
-            columns=["date", "ticker", "amount"]
-        )
+        # ⚠️ Ne pas passer `columns=[...]` → sinon pandas croit que tu imposes l’ordre
+        df = pd.DataFrame.from_records(dividends.values("date", "ticker__ticker", "amount"))
 
+        # Renommer correctement la colonne du ticker
+        df.rename(columns={"ticker__ticker": "ticker"}, inplace=True)
+
+        # Pivot → colonnes = tickers
         df_pivot = df.pivot(index="date", columns="ticker", values="amount")
+
         df_pivot.index = pd.to_datetime(df_pivot.index)
         df_pivot.sort_index(inplace=True)
         df_pivot = df_pivot.astype(float)
@@ -915,7 +1012,7 @@ class PortfolioTransaction(models.Model):
         df = df.apply(convert_row, axis=1)
         df["currency"] = "EUR"
 
-        return df
+        return StockSplit.apply_splits(df)
 
     @classmethod
     def first_and_last_date(cls, user, portfolio) -> tuple[datetime | None, datetime | None]:
@@ -936,6 +1033,116 @@ class PortfolioTransaction(models.Model):
 
         return first_date, last_date
 
+    @classmethod
+    def get_open_positions_dict(cls, user, portfolio) -> dict[str, pd.DataFrame]:
+        """
+        Retourne un dictionnaire {ticker: dataframe} ne contenant que les positions ouvertes
+        (opérations buy/sell uniquement) d'un utilisateur pour un portefeuille donné.
+        Les transactions sont converties en EUR.
+        """
+        df = cls.get_transactions_in_eur(user, portfolio)
+
+        if df.empty:
+            return {}
+
+        # Garder uniquement les opérations buy/sell
+        df = df[df["operation"].isin(["buy", "sell"])]
+
+        open_positions = {}
+
+        for ticker, ticker_df in df.groupby("ticker"):
+            if ticker is None:  # ignorer dépôts/retraits
+                continue
+
+            ticker_df = ticker_df.sort_index()
+            qty = 0.0
+            last_open_index = None
+
+            for idx, row in ticker_df.iterrows():
+                if row["operation"] == "buy":
+                    qty += row["quantity"]
+                    if last_open_index is None:
+                        last_open_index = idx
+                elif row["operation"] == "sell":
+                    qty -= row["quantity"]
+
+                # si la position est fermée → reset
+                if abs(qty) < 1e-9:
+                    last_open_index = None
+
+            # si position encore ouverte → garder seulement depuis la dernière ouverture
+            if qty > 0 and last_open_index is not None:
+                open_positions[ticker] = ticker_df.loc[last_open_index:]
+
+        return open_positions
+
+    @classmethod
+    def get_buy_transactions(cls, user_id=None, portfolio_id=None) -> pd.DataFrame:
+        """
+        Retourne un DataFrame avec les transactions d'achat nettes,
+        en tenant compte des ventes partielles ou totales.
+        Chaque ligne représente la quantité encore détenue.
+        Les montants restent positifs.
+        """
+        # Récupérer toutes les transactions d'achat et de vente
+        qs = cls.objects.filter(operation__in=["buy", "sell"]).select_related("portfolio_ticker__ticker")
+        if user_id is not None:
+            qs = qs.filter(user_id=user_id)
+        if portfolio_id is not None:
+            qs = qs.filter(portfolio_id=portfolio_id)
+
+        df = pd.DataFrame.from_records(
+            qs.values(
+                "date", "amount", "operation", "fees", "stock_price",
+                "quantity", "currency", "portfolio_ticker__ticker__ticker"
+            )
+        )
+
+        if df.empty:
+            return pd.DataFrame()
+
+        df["date"] = pd.to_datetime(df["date"])
+        df.sort_values("date", inplace=True)
+
+        def compute_remaining_transactions(group):
+            group = group.copy()
+            remaining_transactions = []
+
+            for _, row in group.iterrows():
+                qty = row["quantity"]
+                if row["operation"] == "buy":
+                    remaining_transactions.append(row.to_dict())
+                elif row["operation"] == "sell":
+                    # On réduit la quantité des achats précédents
+                    qty_to_sell = qty
+                    for prev in remaining_transactions:
+                        if prev["quantity"] >= qty_to_sell:
+                            prev["quantity"] -= qty_to_sell
+                            qty_to_sell = 0
+                            break
+                        else:
+                            qty_to_sell -= prev["quantity"]
+                            prev["quantity"] = 0
+                    # Supprimer les transactions complètement vendues
+                    remaining_transactions = [t for t in remaining_transactions if t["quantity"] > 0]
+
+            return pd.DataFrame(remaining_transactions)
+
+        df = df.groupby("portfolio_ticker__ticker__ticker", group_keys=False).apply(compute_remaining_transactions)
+
+        if df.empty:
+            return df
+
+        df.rename(columns={"portfolio_ticker__ticker__ticker": "ticker"}, inplace=True)
+        df.set_index("date", inplace=True)
+
+        numeric_cols = ["amount", "fees", "stock_price", "quantity"]
+        for col in numeric_cols:
+            df[col] = df[col].astype(float)
+
+        return StockSplit.apply_splits(df)
+
+
 class PortfolioPerformance(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
@@ -945,7 +1152,6 @@ class PortfolioPerformance(models.Model):
     tickers_twr = models.JSONField()
     tickers_gain = models.JSONField()
     tickers_valuation = models.JSONField()
-    tickers_invested_amounts = models.JSONField()
     tickers_dividends = models.JSONField()
     tickers_pru = models.JSONField()
 
@@ -960,3 +1166,242 @@ class PortfolioPerformance(models.Model):
     portfolio_cagr = models.JSONField()
     portfolio_dividend_yield = models.JSONField()
     portfolio_dividend_earn = models.JSONField()
+
+class TransactionCompareSP500(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
+    calculated_at = models.DateTimeField(auto_now=True)
+    ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE, blank=True, null=True)
+
+    date = models.DateField(blank=True, null=True)
+    purchase_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    current_value = models.DecimalField(max_digits=12, decimal_places=2)
+    total_gain = models.DecimalField(max_digits=12, decimal_places=2)
+    gain_percentage = models.DecimalField(max_digits=12, decimal_places=2)
+    sp500_value = models.DecimalField(max_digits=12, decimal_places=2)
+    sp500_gain_percentage = models.DecimalField(max_digits=12, decimal_places=2)
+    performance_gap = models.DecimalField(max_digits=12, decimal_places=2)
+    holding_duration = models.DecimalField(max_digits=12, decimal_places=2)
+    annualized_return = models.DecimalField(max_digits=12, decimal_places=2)
+    dividend_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    dividend_yield = models.DecimalField(max_digits=12, decimal_places=2)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    stock_price = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_fees = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, blank=True, null=True)
+
+    @classmethod
+    def create_or_update_transaction(
+        cls,
+        user,
+        portfolio,
+        ticker,
+        date,
+        purchase_amount,
+        current_value,
+        total_gain,
+        gain_percentage,
+        sp500_value,
+        sp500_gain_percentage,
+        performance_gap,
+        holding_duration,
+        annualized_return,
+        dividend_amount,
+        dividend_yield,
+        quantity,
+        stock_price,
+        transaction_fees,
+        currency,
+        tolerance: Decimal = Decimal("0.01")
+    ):
+        """
+        Crée ou met à jour une transaction comparée au SP500.
+        Si une transaction proche existe (tolérance), elle sera remplacée.
+        """
+
+        # Recherche d'une transaction existante proche
+        existing_qs = cls.objects.filter(
+            user=user,
+            portfolio=portfolio,
+            ticker=ticker,
+            date=date
+        ).filter(
+            purchase_amount__gte=purchase_amount - tolerance,
+            purchase_amount__lte=purchase_amount + tolerance,
+            quantity__gte=quantity - tolerance,
+            quantity__lte=quantity + tolerance,
+            stock_price__gte=stock_price - tolerance,
+            stock_price__lte=stock_price + tolerance
+        )
+
+        if existing_qs.exists():
+            # Met à jour la transaction existante
+            existing_qs.update(
+                purchase_amount=purchase_amount,
+                current_value=current_value,
+                total_gain=total_gain,
+                gain_percentage=gain_percentage,
+                sp500_value=sp500_value,
+                sp500_gain_percentage=sp500_gain_percentage,
+                performance_gap=performance_gap,
+                holding_duration=holding_duration,
+                annualized_return=annualized_return,
+                dividend_amount=dividend_amount,
+                dividend_yield=dividend_yield,
+                quantity=quantity,
+                stock_price=stock_price,
+                transaction_fees=transaction_fees,
+                currency=currency,
+            )
+            return existing_qs.first()
+
+        # Sinon, création d'une nouvelle transaction
+        transaction = cls.objects.create(
+            user=user,
+            portfolio=portfolio,
+            ticker=ticker,
+            date=date,
+            purchase_amount=purchase_amount,
+            current_value=current_value,
+            total_gain=total_gain,
+            gain_percentage=gain_percentage,
+            sp500_value=sp500_value,
+            sp500_gain_percentage=sp500_gain_percentage,
+            performance_gap=performance_gap,
+            holding_duration=holding_duration,
+            annualized_return=annualized_return,
+            dividend_amount=dividend_amount,
+            dividend_yield=dividend_yield,
+            quantity=quantity,
+            stock_price=stock_price,
+            transaction_fees=transaction_fees,
+            currency=currency,
+        )
+        return transaction
+
+class TickerPerformanceCompareSP500(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE)
+    ticker = models.ForeignKey(PortfolioTicker, on_delete=models.CASCADE, blank=True, null=True)
+
+    calculated_at = models.DateTimeField(auto_now=True)
+    number_of_transactions = models.DecimalField(max_digits=12, decimal_places=2)
+    purchase_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    current_value = models.DecimalField(max_digits=12, decimal_places=2)
+    total_gain = models.DecimalField(max_digits=12, decimal_places=2)
+    gain_percentage = models.DecimalField(max_digits=12, decimal_places=2)
+    sp500_value = models.DecimalField(max_digits=12, decimal_places=2)
+    sp500_gain_percentage = models.DecimalField(max_digits=12, decimal_places=2)
+    performance_gap = models.DecimalField(max_digits=12, decimal_places=2)
+    holding_duration = models.DecimalField(max_digits=12, decimal_places=2)
+    annualized_return = models.DecimalField(max_digits=12, decimal_places=2)
+    dividend_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    dividend_yield = models.DecimalField(max_digits=12, decimal_places=2)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_fees = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, blank=True, null=True)
+
+    @classmethod
+    def create_or_update_transaction(
+        cls,
+        user,
+        portfolio,
+        ticker,
+        number_of_transactions,
+        purchase_amount,
+        current_value,
+        total_gain,
+        gain_percentage,
+        sp500_value,
+        sp500_gain_percentage,
+        performance_gap,
+        holding_duration,
+        annualized_return,
+        dividend_amount,
+        dividend_yield,
+        quantity,
+        transaction_fees,
+        currency,
+        tolerance: Decimal = Decimal("0.01")
+    ):
+        """
+        Crée ou met à jour une performance agrégée par ticker comparée au SP500.
+        Si elle existe déjà (avec tolérance), elle sera remplacée.
+        """
+        existing_qs = cls.objects.filter(
+            user=user,
+            portfolio=portfolio,
+            ticker=ticker,
+            number_of_transactions__gte=number_of_transactions - tolerance,
+            number_of_transactions__lte=number_of_transactions + tolerance,
+            purchase_amount__gte=purchase_amount - tolerance,
+            purchase_amount__lte=purchase_amount + tolerance,
+            current_value__gte=current_value - tolerance,
+            current_value__lte=current_value + tolerance,
+            total_gain__gte=total_gain - tolerance,
+            total_gain__lte=total_gain + tolerance,
+            gain_percentage__gte=gain_percentage - tolerance,
+            gain_percentage__lte=gain_percentage + tolerance,
+            sp500_value__gte=sp500_value - tolerance,
+            sp500_value__lte=sp500_value + tolerance,
+            sp500_gain_percentage__gte=sp500_gain_percentage - tolerance,
+            sp500_gain_percentage__lte=sp500_gain_percentage + tolerance,
+            performance_gap__gte=performance_gap - tolerance,
+            performance_gap__lte=performance_gap + tolerance,
+            holding_duration__gte=holding_duration - tolerance,
+            holding_duration__lte=holding_duration + tolerance,
+            annualized_return__gte=annualized_return - tolerance,
+            annualized_return__lte=annualized_return + tolerance,
+            dividend_amount__gte=dividend_amount - tolerance,
+            dividend_amount__lte=dividend_amount + tolerance,
+            dividend_yield__gte=dividend_yield - tolerance,
+            dividend_yield__lte=dividend_yield + tolerance,
+            quantity__gte=quantity - tolerance,
+            quantity__lte=quantity + tolerance,
+            transaction_fees__gte=transaction_fees - tolerance,
+            transaction_fees__lte=transaction_fees + tolerance,
+            currency=currency,
+        )
+
+        if existing_qs.exists():
+            # Met à jour la performance existante
+            existing_qs.update(
+                number_of_transactions=number_of_transactions,
+                purchase_amount=purchase_amount,
+                current_value=current_value,
+                total_gain=total_gain,
+                gain_percentage=gain_percentage,
+                sp500_value=sp500_value,
+                sp500_gain_percentage=sp500_gain_percentage,
+                performance_gap=performance_gap,
+                holding_duration=holding_duration,
+                annualized_return=annualized_return,
+                dividend_amount=dividend_amount,
+                dividend_yield=dividend_yield,
+                quantity=quantity,
+                transaction_fees=transaction_fees,
+            )
+            return existing_qs.first()
+
+        # Sinon, crée une nouvelle performance
+        ticker_performance = cls.objects.create(
+            user=user,
+            portfolio=portfolio,
+            ticker=ticker,
+            number_of_transactions=number_of_transactions,
+            purchase_amount=purchase_amount,
+            current_value=current_value,
+            total_gain=total_gain,
+            gain_percentage=gain_percentage,
+            sp500_value=sp500_value,
+            sp500_gain_percentage=sp500_gain_percentage,
+            performance_gap=performance_gap,
+            holding_duration=holding_duration,
+            annualized_return=annualized_return,
+            dividend_amount=dividend_amount,
+            dividend_yield=dividend_yield,
+            quantity=quantity,
+            transaction_fees=transaction_fees,
+            currency=currency,
+        )
+        return ticker_performance

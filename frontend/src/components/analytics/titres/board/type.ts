@@ -1,5 +1,6 @@
 export type TableDataTicker = {
   id: number; // primary key
+  logo: string;
 
   ticker: string;
   dateBuy: Date;
@@ -32,6 +33,7 @@ export type TableDataPosition = {
   name: string;
   nbBuy: number;
   logo: string;
+  currency: string;
 
   amountInvest: number;
   value: number;

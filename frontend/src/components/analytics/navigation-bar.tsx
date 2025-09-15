@@ -141,12 +141,12 @@ export function NavigationBar() {
         )}
         {activeTab === "titres" && (
           <TitresPage
-            portfolioId={selectedPortfolio}
+            selectedPortfolio={selectedPortfolio}
           />
         )}
         {activeTab === "dividendes" && (
           <DividendsPage
-            portfolioId={selectedPortfolio}
+            selectedPortfolio={selectedPortfolio}
           />
         )}
       </div>

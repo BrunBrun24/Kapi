@@ -10,16 +10,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')  # Remplace par le nom de ton projet
 django.setup()
 
-from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerformance, Portfolio, StockPrice
-from api.services.modules.portefeuille_bourse import PortefeuilleBourse
-from api.services.modules.portfolios.my_portfolio import MyPortfolio, BasePortfolio
-from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAveraging
+from api.models import Portfolio
+from api.services.modules.portfolio_performances import PorfolioPerformances
+from api.services.modules.compare_transactions_sp500 import ComparePortfolioSP500
 
 
 users = [u for u in Portfolio.objects.values()]
 print(users)
 
-tickers_prices = StockPrice.get_open_prices_dataframe_for_all_users()
 
 if __name__ == "__main__":
     # Récupérer les utilisateurs distincts qui ont un portefeuille
@@ -31,4 +29,5 @@ if __name__ == "__main__":
         user = User.objects.get(pk=user_id)
         portfolios = Portfolio.objects.filter(user=user)
         
-        calcul_portfolio = PortefeuilleBourse(user, portfolios)
+        calcul_portfolio = PorfolioPerformances(user, portfolios)
+        # calcul_portfolio = ComparePortfolioSP500(user, portfolios)

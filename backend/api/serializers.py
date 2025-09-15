@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    CURRENCY_CHOICES, CustomUser, Company, StockPrice, UserPreference,
+    CURRENCY_CHOICES, CustomUser, Company, StockPrice, TickerPerformanceCompareSP500, TransactionCompareSP500, UserPreference,
     Portfolio, PortfolioTicker, PortfolioTransaction
 )
 
@@ -55,6 +55,15 @@ class PortfolioTickerSerializer(serializers.ModelSerializer):
         self.instance.currency = new_currency
         self.instance.save()
 
+# class TransactionCompareSP500Serializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = TransactionCompareSP500
+#         fields = "__all__"
+
+# class TickerPerformanceCompareSP500Serializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = TickerPerformanceCompareSP500
+#         fields = "__all__"
 
 
 # Transaction

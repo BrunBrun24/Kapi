@@ -5,6 +5,9 @@ from datetime import datetime, timedelta
 from api.models import Dividend
 
 class BasePortfolio:
+    def __init__(self, start_date: datetime, end_date: datetime):
+        self.start_date = start_date
+        self.end_date = end_date
 
     ########## Pourcentage ##########
     @staticmethod
@@ -239,10 +242,10 @@ class BasePortfolio:
         assert isinstance(sma, list) and all(isinstance(sma_day, int) for sma_day in sma), "sma doit être une liste d'entiers"
 
         ticker_prices = self.download_tickers_price(tickers, (start_date - timedelta(max(sma) + 50)), end_date)
-        sma_df = pd.DataFrame()  # Initialiser avec les mêmes index que ticker_price_df
+        sma_df = pd.DataFrame()  # Initialiser avec les mêmes index que tickers_prices
 
         for num_days in sma:
-            # Calculer la moyenne mobile pour chaque ticker (chaque colonne de ticker_price_df)
+            # Calculer la moyenne mobile pour chaque ticker (chaque colonne de tickers_prices)
             moving_average = ticker_prices.rolling(window=num_days).mean()
             
             # Ajouter chaque colonne SMA avec un suffixe du nombre de jours
@@ -429,48 +432,45 @@ class BasePortfolio:
     ##########################
 
     ########## Dividendes ##########
-    def calculate_dividends_evolution(self, portfolio_gross_price_evolution: pd.DataFrame, ticker_price_df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_dividends_evolution(self, portfolio_valuation: pd.DataFrame, tickers_prices: pd.DataFrame) -> pd.DataFrame:
         """
         Calcule l'évolution des dividendes pour chaque ticker d'un portefeuille, basée sur les prix bruts et les dividendes distribués,
         en récupérant les dividendes depuis la base de données via les méthodes utilitaires du modèle Dividend.
 
         Args:
-            portfolio_gross_price_evolution (pd.DataFrame): DataFrame contenant l'évolution brute des prix des tickers du portefeuille.
-            ticker_price_df (pd.DataFrame): DataFrame contenant les prix des tickers correspondants.
+            portfolio_valuation (pd.DataFrame): DataFrame contenant l'évolution brute des prix des tickers du portefeuille.
+            tickers_prices (pd.DataFrame): DataFrame contenant les prix des tickers correspondants.
 
         Returns:
             pd.DataFrame: DataFrame contenant l'évolution des dividendes pour chaque ticker, répartis sur les dates du portefeuille.
         """
-        assert isinstance(portfolio_gross_price_evolution, pd.DataFrame), "portfolio_gross_price_evolution doit être un DataFrame"
-        assert isinstance(ticker_price_df, pd.DataFrame), "ticker_price_df doit être un DataFrame"
+        assert isinstance(portfolio_valuation, pd.DataFrame), "portfolio_valuation doit être un DataFrame"
+        assert isinstance(tickers_prices, pd.DataFrame), "tickers_prices doit être un DataFrame"
 
-        assert all(isinstance(date, pd.Timestamp) for date in portfolio_gross_price_evolution.index), "L'index de portfolio_gross_price_evolution doit être composé de pd.Timestamp"
+        assert all(isinstance(date, pd.Timestamp) for date in portfolio_valuation.index), "L'index de portfolio_valuation doit être composé de pd.Timestamp"
 
-        tickers = list(portfolio_gross_price_evolution.columns)
+        tickers = list(portfolio_valuation.columns)
 
         # Récupérer tous les dividendes en une seule fois sous forme de DataFrame
         raw_dividends_df = Dividend.get_dividends_for_tickers_between_dates(tickers, self.start_date, self.end_date)
 
         if raw_dividends_df.empty:
-            return pd.DataFrame(0, index=portfolio_gross_price_evolution.index, columns=tickers)
+            return pd.DataFrame(0, index=portfolio_valuation.index, columns=tickers)
 
         # Initialiser le DataFrame des dividendes avec des zéros
-        tickers_dividends = pd.DataFrame(0, index=portfolio_gross_price_evolution.index, columns=tickers, dtype=float)
+        tickers_dividends = pd.DataFrame(0, index=portfolio_valuation.index, columns=tickers, dtype=float)
 
         for date in raw_dividends_df.index:
             for ticker in raw_dividends_df.columns:
                 dividend_amount = raw_dividends_df.at[date, ticker]
                 if pd.isna(dividend_amount) or date not in tickers_dividends.index:
                     continue
-                try:
-                    # Ajuster le dividende en fonction des variations de prix
-                    adjusted_dividend = dividend_amount * (
-                        portfolio_gross_price_evolution.at[date, ticker] / ticker_price_df.at[date, ticker]
-                    )
-                    tickers_dividends.at[date, ticker] += adjusted_dividend
-                except KeyError:
-                    # Cas où la date ou le ticker est manquant dans l’un des DataFrames
-                    continue
+
+                # Ajuster le dividende en fonction des variations de prix
+                adjusted_dividend = dividend_amount * (
+                    portfolio_valuation.at[date, ticker] / tickers_prices.at[date, ticker]
+                )
+                tickers_dividends.at[date, ticker] += adjusted_dividend
 
         return tickers_dividends
 
@@ -541,7 +541,7 @@ class BasePortfolio:
 
         return pru
     
-    def calculate_portfolio_cagr(self, portfolio_valuation: pd.Series, horizons_years=(1, 2, 3, 5, 10)):
+    def calculate_portfolio_cagr(self, portfolio_valuation: pd.Series, portfolio_invested_amounts: pd.Series, horizons_days=(1, 2, 3, 5, 10)) -> dict:
         """
         Calcule le CAGR du portefeuille sur plusieurs horizons.
         
@@ -552,54 +552,29 @@ class BasePortfolio:
         Returns:
             dict[horizon, float]: CAGR par horizon (NaN si période indisponible).
         """
-        # 1) Sélection de la date de fin : on enlève l'heure et on s'assure qu'elle existe dans l'index
-        today = pd.Timestamp(self.end_date).normalize()
-        if today not in portfolio_valuation.index:
-            possible_ends = portfolio_valuation.index[portfolio_valuation.index <= today]
-            if possible_ends.empty:
-                raise ValueError("Aucune date ≤ end_date dans la série.")
-            today = possible_ends.max()
-
-        # 2) (Optionnel) On peut retirer les zéros initiaux
-        portfolio_valuation = portfolio_valuation.loc[portfolio_valuation.ne(0).idxmax():]
         
-        end_val = portfolio_valuation.loc[today]
-
-        cagr_results = {}
-        for horizon in horizons_years:
-            start_target = today - pd.DateOffset(years=horizon)
-
-            # date de départ : dernière date ≤ start_target
-            possible_starts = portfolio_valuation.index[portfolio_valuation.index <= start_target]
-            if possible_starts.empty:
-                cagr_results[horizon] = None
-                continue
-            start_date = possible_starts.max()
-
-            start_val = portfolio_valuation.loc[start_date]
-
-            if pd.isna(start_val) or start_val == 0 or pd.isna(end_val):
-                cagr_results[horizon] = None
-                continue
-
-            cagr = (end_val / start_val) ** (1 / horizon) - 1
-            cagr_results[horizon] = round(float(cagr * 100), 2)
-
-        # 4) CAGR depuis l'origine (« all »)
-        first_date = portfolio_valuation.index[0]
-        first_val = portfolio_valuation.iloc[0]
-
-        if first_date < today and first_val not in (0, None):
-            n_years_total = (today - first_date).days / 365.25
-            if n_years_total > 0:
-                total_cagr = (end_val / first_val) ** (1 / n_years_total) - 1
-                cagr_results["all"] = round(float(total_cagr * 100), 2)
+        portfolio_valuation = portfolio_valuation.loc[portfolio_valuation.ne(0).idxmax():]
+        portfolio_invested_amounts = portfolio_invested_amounts.loc[portfolio_invested_amounts.ne(0).idxmax():]
+        result = {}
+        for day in horizons_days:
+            day_to_year = (365 * day)
+            if (len(portfolio_valuation.index) < day_to_year):
+                result[day] = None
             else:
-                cagr_results["all"] = None
-        else:
-            cagr_results["all"] = None
+                years = (day_to_year / 365)
+                annualized_return = round(((
+                    portfolio_valuation.iloc[-day] / portfolio_invested_amounts.iloc[-day]
+                ) ** (1 / years) - 1) * 100, 2)
+                result[day] = annualized_return
 
-        return cagr_results
+        years = (len(portfolio_valuation.index) / 365)
+        annualized_return = round(((
+            portfolio_valuation.iloc[-1] / portfolio_invested_amounts.iloc[-1]
+        ) ** (1 / years) - 1) * 100, 2)
+        result["all"] = annualized_return
+
+        return result
+
     
     @staticmethod
     def calculate_portfolio_sharpe_ratio(portfolio_valuation: pd.DataFrame, risk_free_rate_annual: float = 0.025, periods: str='annuel') -> pd.Series:
@@ -823,7 +798,7 @@ class BasePortfolio:
         return [round(float(drawdown_max * 100), 2), date_drawdown_max]
     
     @staticmethod
-    def calculate_dividend_yield(transaction_df: pd.Series, portfolio_valuation: pd.Series) -> float:
+    def calculate_dividend_yield(transaction_df: pd.DataFrame, portfolio_valuation: pd.Series) -> float:
         """
         Calcule le rendement du dividende en pourcentage.
         """

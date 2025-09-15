@@ -2,9 +2,9 @@ from datetime import datetime
 import pandas as pd
 from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
-class DollarCostAveraging(BasePortfolio):
+class DollarCostAveraging():
 
-    def dca(self, portfolio: dict, tickers_prices: pd.DataFrame, money: float):
+    def dca(self, portfolio: dict, tickers_prices: pd.DataFrame, money: float, start_date: datetime, end_date: datetime):
         """
         Cette méthode permet de simuler un investissement en Dollar Cost Average (DCA) en fonction de différents portefeuilles.
 
@@ -15,13 +15,15 @@ class DollarCostAveraging(BasePortfolio):
             réduisant l'impact des fluctuations du marché.
         """
 
-        investment_dates = self.get_dca_dcv_investment_dates()
+        base_portfolio = BasePortfolio(start_date, end_date)
+
+        investment_dates = self.get_dca_dcv_investment_dates(start_date, end_date)
 
         # Gérer les dates manquantes dans ticker_prices
         # 1. Normaliser les dates
         tickers_prices.index = pd.to_datetime(tickers_prices.index).normalize()
         # 2. Créer toutes les dates
-        all_dates = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+        all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
         # 3. Reindex et propager les valeurs
         tickers_prices = tickers_prices.reindex(all_dates).ffill().bfill()
 
@@ -31,22 +33,22 @@ class DollarCostAveraging(BasePortfolio):
         portfolio_transactions = self.initialise_transactions_portfolio(self.create_transaction_dca(investment_amounts, portfolio[0]), tickers_prices)
 
         # Tickers
-        tickers_invested_amounts = self.tickers_investment_amount_evolution(portfolio_transactions)
-        tickers_pru = self.calculate_pru(portfolio_transactions, tickers_invested_amounts)
-        tickers_valuation, tickers_gain_pct, tickers_gain = self.capital_gain_losses_composed(tickers_invested_amounts, tickers_pru, filtered_tickers_prices)
+        tickers_invested_amounts = base_portfolio.tickers_investment_amount_evolution(portfolio_transactions)
+        tickers_pru = base_portfolio.calculate_pru(portfolio_transactions, tickers_invested_amounts)
+        tickers_valuation, tickers_gain_pct, tickers_gain = base_portfolio.capital_gain_losses_composed(tickers_invested_amounts, tickers_pru, filtered_tickers_prices)
 
         # Portefeuille
         portfolio_valuation = tickers_valuation.sum(axis=1)
-        portfolio_realized_gains_losses = self.compute_plus_value_evolution(portfolio_transactions, tickers_invested_amounts)["plus_value_cumulative"]
+        portfolio_realized_gains_losses = base_portfolio.compute_plus_value_evolution(portfolio_transactions, tickers_invested_amounts)["plus_value_cumulative"]
         portfolio_gain = tickers_gain.sum(axis=1) + portfolio_realized_gains_losses
         # L'argent investi correspond à l'argent investi dans les tickers en enlevant les plus et moins values réalisées
         invested_money = (tickers_invested_amounts.sum(axis=1).iloc[-1] - portfolio_realized_gains_losses.iloc[-1])
-        portfolio_gain_pct = self.calculate_portfolio_percentage_change(portfolio_gain, invested_money)
+        portfolio_gain_pct = base_portfolio.calculate_portfolio_percentage_change(portfolio_gain, invested_money)
         
         tickers_twr = tickers_gain_pct
         tickers_gain = tickers_gain
         tickers_valuation = tickers_valuation
-        tickers_dividends = self.calculate_dividends_evolution(tickers_valuation, filtered_tickers_prices)
+        tickers_dividends = base_portfolio.calculate_dividends_evolution(tickers_valuation, filtered_tickers_prices)
         tickers_invested_amounts = tickers_invested_amounts
         tickers_pru = tickers_pru
 
@@ -54,15 +56,15 @@ class DollarCostAveraging(BasePortfolio):
         portfolio_gain = portfolio_gain
         portfolio_valuation = portfolio_valuation
         portfolio_invested_amounts = tickers_invested_amounts.sum(axis=1)
-        portfolio_monthly_percentages = self.calculate_monthly_percentage_change(
+        portfolio_monthly_percentages = base_portfolio.calculate_monthly_percentage_change(
             portfolio_valuation,
             portfolio_transactions
         )
-        portfolio_cagr = self.calculate_portfolio_cagr(portfolio_valuation)
-        portfolio_cash = self.compute_cash_evolution(portfolio_transactions)["cash_cumulative"]
-        portfolio_fees = self.compute_fees_evolution(portfolio_transactions)["cumulative_fees"]
-        portfolio_dividend_yield = self.calculate_dividend_yield(portfolio_transactions, portfolio_valuation)
-        portfolio_dividend_earn = self.calculate_dividend_earn(portfolio_transactions)
+        portfolio_cagr = base_portfolio.calculate_portfolio_cagr(portfolio_valuation, portfolio_invested_amounts)
+        portfolio_cash = base_portfolio.compute_cash_evolution(portfolio_transactions)["cash_cumulative"]
+        portfolio_fees = base_portfolio.compute_fees_evolution(portfolio_transactions)["cumulative_fees"]
+        portfolio_dividend_yield = base_portfolio.calculate_dividend_yield(portfolio_transactions, portfolio_valuation)
+        portfolio_dividend_earn = base_portfolio.calculate_dividend_earn(portfolio_transactions)
         
         return {
             "tickers_invested_amounts": tickers_invested_amounts,
@@ -84,16 +86,14 @@ class DollarCostAveraging(BasePortfolio):
             "portfolio_dividend_earn": portfolio_dividend_earn,
         }
 
-    def get_dca_dcv_investment_dates(self) -> list:
+    @staticmethod
+    def get_dca_dcv_investment_dates(start_date: datetime, end_date: datetime) -> list:
         """
         Extrait les dates de début de chaque mois dans la plage donnée entre start_date et end_date.
 
         Returns:
             list: Liste des dates de début de chaque mois sous forme de chaînes formatées 'YYYY-MM-DD'.
         """
-
-        start_date = self.start_date
-        end_date = self.end_date
 
         # Initialisation de la liste pour stocker les dates de début de chaque mois
         start_of_months = []
@@ -126,7 +126,8 @@ class DollarCostAveraging(BasePortfolio):
 
         return result
 
-    def initialise_transactions_portfolio(self, transactions: list, tickers_prices: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def initialise_transactions_portfolio(transactions: list, tickers_prices: pd.DataFrame) -> pd.DataFrame:
         rows = []
         for t in transactions:
             price = tickers_prices.at[t["date"], t["ticker"]]

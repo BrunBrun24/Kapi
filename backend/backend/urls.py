@@ -19,7 +19,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
-    AddPortfolioTickerView, PortfolioPerformanceDynamicView, PortfolioTickerCurrenciesView, UserPortfolioPerformanceRepartitionAllPortfolio, UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
+    AddPortfolioTickerView, PortfolioAllTransactionsCompareDetailView, PortfolioPerformanceDynamicView, PortfolioPositionSummaryView, PortfolioTickerCurrenciesView, PortfolioTickerPerformanceView, PortfolioTransactionCompareDetailView, UserPortfolioPerformanceRepartitionAllPortfolio, UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
     CreateUserView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView
 )
 
@@ -52,15 +52,15 @@ urlpatterns = [
     path("api/upload-excel/transaction/", ExcelPortfolioTransactionUploadView.as_view()),
 
     # Portefeuille Performance
-    # # # # path("api/user/portfolio/performance/", UserPortfoliosPerformance.as_view()),
     path("api/user/portfolio/utilisateur/", UserPortfolioPerformanceSummary.as_view()),
-
     path("api/portfolio-performance/<int:portfolio_id>/", PortfolioPerformanceDynamicView.as_view()),
     path("api/portfolio-performance/portfolio/repartition/", UserPortfolioPerformanceRepartitionAllPortfolio.as_view()),
     path("api/portfolio-performance/twr/<str:start_date>/<int:portfolio_id>/", UserPortfolioPerformanceTwrDate.as_view()),
 
-    # Company
-    # path('api/tickers/', TickerListView.as_view()),
+    path('api/portfolio-performance/tickers-performances/<int:portfolio_id>/', PortfolioPositionSummaryView.as_view()),
+    path('api/portfolio-performance/ticker-transaction-performances/<int:portfolio_id>/<str:ticker>/', PortfolioTransactionCompareDetailView.as_view()),
+    path('api/portfolio-performance/all-ticker-transactions/<int:portfolio_id>/', PortfolioAllTransactionsCompareDetailView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/", PortfolioTickerPerformanceView.as_view()),
 
     # Annexe
     path("api/currencies/", CurrencyListView.as_view()),

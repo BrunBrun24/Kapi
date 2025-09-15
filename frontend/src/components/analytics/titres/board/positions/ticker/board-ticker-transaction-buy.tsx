@@ -44,72 +44,17 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { TableDataTicker } from "@/components/analytics/titres/board/type";
-
-const data: TableDataTicker[] = [
-  {
-    id: 1,
-    ticker: "INTU",
-    dateBuy: new Date("2023-03-15"),
-    amount: 5000,
-    stockValue: 5600,
-    gains: 600,
-    gainsPercentage: 12,
-    gainsSP500: 450,
-    gainsPercentageSP500: 9,
-    difference: 150,
-    durationDay: 365,
-    annualizedPercentage: 12.0,
-    capitalGainOrLoss: 580,
-    capitalGainOrLossPercentage: 11.6,
-    dividendAmount: 20,
-    dividendYieldPercentage: 0.4,
-    quantity: 50,
-    pru: 100,
-    fees: 10,
-  },
-  {
-    id: 2,
-    ticker: "INTU",
-    dateBuy: new Date("2022-11-10"),
-    amount: 3000,
-    stockValue: 3300,
-    gains: 300,
-    gainsPercentage: 10,
-    gainsSP500: 250,
-    gainsPercentageSP500: 8.3,
-    difference: 50,
-    durationDay: 570,
-    annualizedPercentage: 6.2,
-    capitalGainOrLoss: 290,
-    capitalGainOrLossPercentage: 9.7,
-    dividendAmount: 10,
-    dividendYieldPercentage: 0.33,
-    quantity: 30,
-    pru: 100,
-    fees: 5,
-  },
-  {
-    id: 3,
-    ticker: "INTU",
-    dateBuy: new Date("2021-01-25"),
-    amount: 4000,
-    stockValue: 5200,
-    gains: 1200,
-    gainsPercentage: 30,
-    gainsSP500: 800,
-    gainsPercentageSP500: 20,
-    difference: 400,
-    durationDay: 1225,
-    annualizedPercentage: 8.2,
-    capitalGainOrLoss: 1100,
-    capitalGainOrLossPercentage: 27.5,
-    dividendAmount: 100,
-    dividendYieldPercentage: 2.5,
-    quantity: 40,
-    pru: 100,
-    fees: 10,
-  },
-];
+import { SelectedPortfolio, UserPortfolio } from "@/components/analytics/type";
+import { useEffect } from "react";
+import api from "@/api";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function formatValueWithColor(
   value: number,
@@ -151,7 +96,7 @@ const columns: ColumnDef<TableDataTicker>[] = [
         accessorKey: "ticker",
         header: "Ticker",
         cell: ({ row }) => {
-          const logoUrl = "Logo";
+          const logoUrl = row.original.logo;
           const companyName = "Name";
           const ticker = row.original.ticker;
 
@@ -172,20 +117,7 @@ const columns: ColumnDef<TableDataTicker>[] = [
       },
       {
         accessorKey: "dateBuy",
-        header: ({ column }) => (
-          <div className="relative flex justify-center items-center">
-            <span>Date</span>
-            <button
-              onClick={() =>
-                column.toggleSorting(column.getIsSorted() === "asc")
-              }
-              className="absolute -bottom-5 z-10 w-5 h-5 rounded-full border bg-background hover:bg-accent flex items-center justify-center shadow"
-              title="Trier par date"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ),
+        header: "Date",
         cell: ({ getValue }) =>
           new Date(getValue() as string).toLocaleDateString("fr-FR", {
             day: "numeric",
@@ -373,22 +305,44 @@ const stickyStyles = [
 // Vertical borders index restent inchangés
 const verticalBordersIndexes = [0, 1, 2, 4, 6, 9, 11, 13, 16];
 
+type BoardTickerTransactionBuyProps = {
+  ticker: string;
+  setOpen: (value: boolean) => void;
+  selectedPortfolio?: UserPortfolio;
+};
+
 export function BoardTickerTransactionBuy({
   ticker,
   setOpen,
-}: {
-  ticker: string;
-  setOpen: (value: boolean) => void;
-}) {
+  selectedPortfolio,
+}: BoardTickerTransactionBuyProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
+  const [performances, setPerformances] = React.useState<any[]>([]);
+
+  useEffect(() => {
+    if (!selectedPortfolio?.id) return;
+
+    const fetchData = async () => {
+      try {
+        const res = await api.get(
+          `/api/portfolio-performance/ticker-transaction-performances/${selectedPortfolio.id}/${ticker}/`
+        );
+        setPerformances(res.data);
+      } catch (error) {
+        console.error("Error fetching performance data:", error);
+      }
+    };
+
+    fetchData();
+  }, [selectedPortfolio]);
 
   const table = useReactTable({
-    data,
+    data: performances,
     columns,
     state: {
       sorting,
@@ -573,23 +527,32 @@ export function BoardTickerTransactionBuy({
 
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                <span
+                  className="text-sm text-muted-foreground whitespace-nowrap"
+                  id="rows-per-page-label"
+                >
                   Rows per page
                 </span>
-                <div className="relative">
-                  <select
-                    value={table.getState().pagination.pageSize}
-                    onChange={(e) => table.setPageSize(Number(e.target.value))}
-                    className="appearance-none border rounded px-2 py-1 text-sm bg-background text-foreground pr-6"
+
+                <Select
+                  value={String(table.getState().pagination.pageSize)}
+                  onValueChange={(value) => table.setPageSize(Number(value))}
+                >
+                  <SelectTrigger
+                    className="w-[80px]"
+                    aria-labelledby="rows-per-page-label"
                   >
+                    <SelectValue placeholder="Select rows" />
+                  </SelectTrigger>
+
+                  <SelectContent>
                     {[10, 15, 20, 25, 30].map((pageSize) => (
-                      <option key={pageSize} value={pageSize}>
+                      <SelectItem key={pageSize} value={String(pageSize)}>
                         {pageSize}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                </div>
+                  </SelectContent>
+                </Select>
               </div>
 
               <span className="text-sm text-muted-foreground whitespace-nowrap">
@@ -600,43 +563,53 @@ export function BoardTickerTransactionBuy({
               <Pagination>
                 <PaginationContent className="flex items-center space-x-2">
                   <PaginationItem>
-                    <button
+                    <Button
+                      variant="outline"
+                      size="icon"
                       onClick={() => table.setPageIndex(0)}
                       disabled={!table.getCanPreviousPage()}
-                      className="p-2 rounded hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
+                      aria-label="Première page"
                     >
                       <ChevronsLeft className="w-4 h-4" />
-                    </button>
-                  </PaginationItem>
-                  <PaginationItem>
-                    <button
-                      onClick={() => table.previousPage()}
-                      disabled={!table.getCanPreviousPage()}
-                      className="p-2 rounded hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </PaginationItem>
 
                   <PaginationItem>
-                    <button
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => table.previousPage()}
+                      disabled={!table.getCanPreviousPage()}
+                      aria-label="Page précédente"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                  </PaginationItem>
+
+                  <PaginationItem>
+                    <Button
+                      variant="outline"
+                      size="icon"
                       onClick={() => table.nextPage()}
                       disabled={!table.getCanNextPage()}
-                      className="p-2 rounded hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
+                      aria-label="Page suivante"
                     >
                       <ChevronRight className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </PaginationItem>
+
                   <PaginationItem>
-                    <button
+                    <Button
+                      variant="outline"
+                      size="icon"
                       onClick={() =>
                         table.setPageIndex(table.getPageCount() - 1)
                       }
                       disabled={!table.getCanNextPage()}
-                      className="p-2 rounded hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
+                      aria-label="Dernière page"
                     >
                       <ChevronsRight className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </PaginationItem>
                 </PaginationContent>
               </Pagination>

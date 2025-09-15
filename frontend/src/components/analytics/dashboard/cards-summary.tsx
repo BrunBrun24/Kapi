@@ -31,7 +31,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
   const [twr, setTwr] = useState<Array<Record<string, number>>>([]);
   const [cagr, setCagr] = useState<Record<string, Record<string, number | null>>>({});
   const [fees, setFees] = useState<Array<Record<string, number>>>([]);
-  const [dividendEarn, setDividendEarn] = useState<Array<Record<string, number>>>([]);
+  const [dividendEarn, setDividendEarn] = useState<Record<string, number>>({});
   const [dividendYield, setDividendYield] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
   const formattedCagr = rawCagr !== null ? rawCagr.toFixed(2) : "";
 
   const lastFees = fees?.at(-1)?.[portfolioGlobalName] ?? 0;
-  // const rawDividendEarn = dividendEarn?.at(-1)?.[portfolioGlobalName] ?? 0;
+  const rawDividendEarn = dividendEarn[portfolioGlobalName] ?? 0;
   const rawDividendYield = dividendYield?.[portfolioGlobalName] ?? 0;
 
   return (
@@ -140,7 +140,7 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
         <CardHeader>
           <CardDescription>Dividendes</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {rawDividendYield.toFixed(2)}%
+            {rawDividendEarn.toFixed(2)}€
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">

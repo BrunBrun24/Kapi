@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { BoardPositionsTickers } from "@/components/analytics/titres/board/positions/board-position-tickers";
-import { BoardTransactions } from "@/components/analytics/titres/board/transactions/board-ticker-transaction";
+import { BoardAllTransactions } from "@/components/analytics/titres/board/transactions/board-ticker-transaction";
 import { IconStackFront } from '@tabler/icons-react';
 import { List } from 'lucide-react';
+import { SelectedPortfolio } from '../../type';
 
-export const NavBar: React.FC = () => {
+export const NavBar = ({
+  selectedPortfolio,
+}: SelectedPortfolio) => {
   const [activeTab, setActiveTab] = useState<'positions' | 'transactions'>('positions');
 
   const baseTabStyle: React.CSSProperties = {
@@ -46,7 +49,7 @@ export const NavBar: React.FC = () => {
       </nav>
 
       <div style={{ marginTop: '20px' }}>
-        {activeTab === 'positions' ? <BoardPositionsTickers /> : <BoardTransactions />}
+        {activeTab === 'positions' ? <BoardPositionsTickers selectedPortfolio={selectedPortfolio}/> : <BoardAllTransactions selectedPortfolio={selectedPortfolio} />}
       </div>
     </div>
   );

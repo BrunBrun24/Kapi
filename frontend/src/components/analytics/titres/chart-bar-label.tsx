@@ -1,30 +1,28 @@
-"use client";
-
+import api from "@/api";
 import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import {
-    ChartContainer,
-    ChartTooltip,
-    ChartTooltipContent,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
 } from "@/components/ui/chart";
+import { Menubar } from "@/components/ui/menubar";
+import React, { useEffect, useState } from "react";
 import {
-    Menubar
-} from "@/components/ui/menubar";
-import React, { useState } from "react";
-import {
-    Bar,
-    BarChart,
-    CartesianGrid,
-    Cell,
-    LabelList,
-    XAxis,
-    YAxis,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  XAxis,
+  YAxis,
 } from "recharts";
+import { UserPortfolio } from "../type";
 
 type CustomTickProps = {
   x: number;
@@ -52,6 +50,13 @@ export const CustomTick: React.FC<CustomTickProps> = ({
   const logoYOffset = -8;
   const tickerYOffset = 12;
   const nameYOffset = 33;
+  const maxNameLength = 12; // nombre maximum de caractères à afficher
+
+  // Tronquer le nom si trop long
+  const displayName =
+    item.companyName.length > maxNameLength
+      ? item.companyName.slice(0, maxNameLength) + "…"
+      : item.companyName;
 
   return (
     <g transform={`translate(${x}, ${y + 10})`}>
@@ -77,130 +82,58 @@ export const CustomTick: React.FC<CustomTickProps> = ({
         {item.ticker}
       </text>
 
-      {/* Nom de la compagnie en dessous */}
+      {/* Nom de la compagnie tronqué */}
       <text x={10} y={nameYOffset} fontSize={9} fill="#555" textAnchor="middle">
-        {item.companyName}
+        {displayName}
       </text>
     </g>
   );
 };
 
 type ChartBarLabelProps = {
+  selectedPortfolio?: UserPortfolio;
   height?: number;
 };
 
-const datasets: Record<string, any[]> = {
-  Montant: [
-    {
-      companyName: "Apple",
-      ticker: "AAPL",
-      logoUrl: "https://logo.clearbit.com/apple.com",
-      value: 186,
-    },
-    {
-      companyName: "Meta",
-      ticker: "META",
-      logoUrl: "https://logo.clearbit.com/meta.com",
-      value: 214,
-    },
-    {
-      companyName: "Microsoft",
-      ticker: "MSFT",
-      logoUrl: "https://logo.clearbit.com/microsoft.com",
-      value: 305,
-    },
-    {
-      companyName: "Tesla",
-      ticker: "TSLA",
-      logoUrl: "https://logo.clearbit.com/tesla.com",
-      value: -73,
-    },
-  ],
-  "%": [
-    {
-      companyName: "Microsoft",
-      ticker: "MSFT",
-      logoUrl: "https://logo.clearbit.com/microsoft.com",
-      value: 305,
-    },
-    {
-      companyName: "Tesla",
-      ticker: "TSLA",
-      logoUrl: "https://logo.clearbit.com/tesla.com",
-      value: -73,
-    },
-    {
-      companyName: "Google",
-      ticker: "GOOGL",
-      logoUrl: "https://logo.clearbit.com/google.com",
-      value: 209,
-    },
-    {
-      companyName: "Amazon",
-      ticker: "AMZN",
-      logoUrl: "https://logo.clearbit.com/amazon.com",
-      value: 237,
-    },
-  ],
-  "% / an": [
-    {
-      companyName: "Google",
-      ticker: "GOOGL",
-      logoUrl: "https://logo.clearbit.com/google.com",
-      value: 209,
-    },
-    {
-      companyName: "Amazon",
-      ticker: "AMZN",
-      logoUrl: "https://logo.clearbit.com/amazon.com",
-      value: 237,
-    },
-    {
-      companyName: "Microsoft",
-      ticker: "MSFT",
-      logoUrl: "https://logo.clearbit.com/microsoft.com",
-      value: 305,
-    },
-    {
-      companyName: "Tesla",
-      ticker: "TSLA",
-      logoUrl: "https://logo.clearbit.com/tesla.com",
-      value: -73,
-    },
-  ],
-  "S&pP500": [
-    {
-      companyName: "Google",
-      ticker: "GOOGL",
-      logoUrl: "https://logo.clearbit.com/google.com",
-      value: 209,
-    },
-    {
-      companyName: "Amazon",
-      ticker: "AMZN",
-      logoUrl: "https://logo.clearbit.com/amazon.com",
-      value: 237,
-    },
-    {
-      companyName: "Microsoft",
-      ticker: "MSFT",
-      logoUrl: "https://logo.clearbit.com/microsoft.com",
-      value: 305,
-    },
-    {
-      companyName: "Tesla",
-      ticker: "TSLA",
-      logoUrl: "https://logo.clearbit.com/tesla.com",
-      value: -73,
-    },
-  ],
-};
+export function ChartBarLabel({
+  selectedPortfolio,
+  height = 500,
+}: ChartBarLabelProps) {
+  const [performances, setPerformances] = useState<Record<string, any[]>>({});
+  const [selectedSet, setSelectedSet] = useState<string>("%");
+  const [chartData, setChartData] = useState<any[]>([]);
 
-export function ChartBarLabel({ height = 500 }: ChartBarLabelProps) {
-  const [selectedSet, setSelectedSet] =
-    useState<keyof typeof datasets>("Montant");
+  useEffect(() => {
+    if (!selectedPortfolio?.id) return;
 
-  const chartData = datasets[selectedSet];
+    const fetchData = async () => {
+      try {
+        const res = await api.get(
+          `/api/portfolio/${selectedPortfolio.id}/performances/`
+        );
+        setPerformances(res.data);
+        setChartData(res.data[selectedSet]);
+      } catch (error) {
+        console.error("Error fetching performance data:", error);
+      }
+    };
+
+    fetchData();
+  }, [selectedPortfolio]);
+
+  useEffect(() => {
+    if (performances && selectedSet in performances) {
+      setChartData(performances[selectedSet]);
+    }
+  }, [selectedSet, performances]);
+
+  // Fonction utilitaire pour formatter le label selon le type de dataset
+  const formatValue = (value: number) => {
+    if (selectedSet === "Montant") return `${value} €`;
+    if (selectedSet === "%" || selectedSet === "% / an") return `${value} %`;
+    if (selectedSet.toLowerCase().includes("sp500")) return `${value} pts`;
+    return value;
+  };
 
   return (
     <div className="space-y-4">
@@ -215,7 +148,7 @@ export function ChartBarLabel({ height = 500 }: ChartBarLabelProps) {
               </CardDescription>
             </div>
             <Menubar className="gap-4">
-              {Object.keys(datasets).map((key) => (
+              {Object.keys(performances).map((key) => (
                 <div
                   key={key}
                   onClick={() => setSelectedSet(key)}
@@ -254,6 +187,7 @@ export function ChartBarLabel({ height = 500 }: ChartBarLabelProps) {
               <ChartTooltip
                 cursor={false}
                 content={<ChartTooltipContent hideLabel />}
+                formatter={(value: any) => formatValue(value)}
               />
               <Bar dataKey="value" radius={8}>
                 {chartData.map((entry, index) => (
@@ -268,6 +202,9 @@ export function ChartBarLabel({ height = 500 }: ChartBarLabelProps) {
                   offset={12}
                   className="fill-foreground"
                   fontSize={12}
+                  formatter={(value: number | string) =>
+                    formatValue(Number(value))
+                  }
                 />
               </Bar>
             </BarChart>

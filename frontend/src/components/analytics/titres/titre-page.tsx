@@ -4,13 +4,16 @@ import { StockStatisticsCard } from "@/components/analytics/titres/cards-summary
 import { ChartPieLabelListInteraction } from "@/components/analytics/titres/chart-pie-label-list-interaction";
 import { NavBar } from "@/components/analytics/titres/board/navigation-board";
 import { ChartBarLabel } from "@/components/analytics/titres/chart-bar-label";
+import { SelectedPortfolio } from "../type";
 
-export default function TitresPage({ data }: PortfolioPerformances) {
+export default function TitresPage({
+  selectedPortfolio,
+}: SelectedPortfolio) {
   return (
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <ChartBarLabel />
-        <NavBar />
+        <ChartBarLabel selectedPortfolio={selectedPortfolio}/>
+        <NavBar selectedPortfolio={selectedPortfolio}/>
 
         <div className="flex w-full gap-4">
           <div className="w-[40%]">

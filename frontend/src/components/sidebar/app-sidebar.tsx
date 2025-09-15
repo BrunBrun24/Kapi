@@ -30,7 +30,7 @@ const data = {
   user: {
     name: "BrunBrun",
     email: "brunbrun@gmail.com",
-    avatar: "/avatars/shadcn.jpg",
+    avatar: "https://logo.clearbit.com/apple.com",
   },
   teams: [
     {

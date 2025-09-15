@@ -10,15 +10,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Max
 
 from api.utils import html_error_response
-from api.services.modules.portefeuille_bourse import PortefeuilleBourse
+from api.services.modules.portfolio_performances import PorfolioPerformances
 
 from .models import (
     CURRENCY_CHOICES,
     Company,
     PortfolioPerformance,
     StockPrice,
+    TickerPerformanceCompareSP500,
+    TransactionCompareSP500,
     UserPreference,
     Portfolio,
     PortfolioTicker,
@@ -703,12 +706,264 @@ class UserPortfolioPerformanceTwrDate(APIView):
         if not isinstance(tickers_valuations, dict):
             return Response({"error": "tickers_valuations must be a dictionary"}, status=400)
         
-        portefeuille = PortefeuilleBourse(user=request.user, portfolios=portfolio_id, start_date=start_date, tickers_valuations=tickers_valuations)
+        portefeuille = PorfolioPerformances(user=request.user, portfolios=portfolio_id, start_date=start_date, tickers_valuations=tickers_valuations)
         
         return Response(portefeuille.get_twr())
 
+class PortfolioPositionSummaryView(APIView):
+    """
+    Retourne un résumé par ticker d'un portefeuille,
+    avec toutes les informations financières et comparatives
+    basées sur TickerPerformanceCompareSP500.
+    """
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request, portfolio_id):
+        user = request.user
 
+        # Vérifie que le portefeuille appartient à l'utilisateur
+        portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=user)
+
+        # Récupère tous les tickers du portefeuille
+        tickers = PortfolioTicker.objects.filter(portfolio=portfolio)
+
+        result = []
+
+        for pt in tickers:
+            # Dernière performance pour ce ticker
+            perf = TickerPerformanceCompareSP500.objects.filter(
+                user=user, portfolio=portfolio, ticker=pt
+            ).order_by("-calculated_at").first()
+
+            if not perf:
+                continue  # on ignore les tickers sans performance
+
+            company = pt.ticker  # lien vers Company
+            logo_url = request.build_absolute_uri(f"/static/logos/{company.ticker}.png")
+
+            result.append({
+                "ticker": company.ticker,
+                "name": company.name,
+                "nbBuy": float(perf.number_of_transactions),
+                "logo": logo_url,
+                "amountInvest": float(perf.purchase_amount),
+                "value": float(perf.current_value),
+                "gains": float(perf.total_gain),
+                "gainsPercentage": float(perf.gain_percentage),
+                "gainsSP500": float(perf.sp500_value),
+                "gainsPercentageSP500": float(perf.sp500_gain_percentage),
+                "difference": float(perf.performance_gap),
+                "durationDay": float(perf.holding_duration),
+                "annualizedPercentage": float(perf.annualized_return),
+                "capitalGainOrLoss": float(perf.total_gain),
+                "capitalGainOrLossPercentage": float(perf.gain_percentage),
+                "dividendAmount": float(perf.dividend_amount),
+                "dividendYieldPercentage": float(perf.dividend_yield),
+                "quantity": float(perf.quantity),
+                "fees": float(perf.transaction_fees),
+                "currency": dict(CURRENCY_CHOICES).get(perf.currency, perf.currency),
+            })
+
+        # Tri en décroissant sur value
+        result_sorted = sorted(result, key=lambda x: x["value"], reverse=True)
+
+        return Response(result_sorted)
+    
+class PortfolioTransactionCompareDetailView(APIView):
+    """
+    Retourne les performances détaillées d'un ticker précis d'un portefeuille,
+    avec toutes les transactions et comparaisons SP500.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, portfolio_id, ticker):
+        user = request.user
+
+        # Vérifie que le portefeuille appartient à l'utilisateur
+        portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=user)
+
+        # Récupère le PortfolioTicker correspondant au ticker demandé
+        portfolio_ticker = get_object_or_404(
+            PortfolioTicker,
+            portfolio=portfolio,
+            ticker__ticker=ticker
+        )
+
+        # Récupère toutes les transactions pour ce ticker
+        transactions = TransactionCompareSP500.objects.filter(
+            user=user,
+            portfolio=portfolio,
+            ticker=portfolio_ticker
+        ).order_by("date")  # tri par date croissante
+
+        if not transactions.exists():
+            return Response({"error": "No transactions found for this ticker."}, status=404)
+        
+        logo_url = request.build_absolute_uri(f"/static/logos/{ticker}.png")
+
+        result = []
+        for idx, tx in enumerate(transactions, start=1):
+            result.append({
+                "id": idx,  # compteur à la place de tx.id
+                "ticker": portfolio_ticker.ticker.ticker,
+                "logo": logo_url,
+                "dateBuy": tx.date,
+                "amount": float(tx.purchase_amount),
+                "stockValue": float(tx.current_value),
+                "gains": float(tx.total_gain),
+                "gainsPercentage": float(tx.gain_percentage),
+                "gainsSP500": float(tx.sp500_value),
+                "gainsPercentageSP500": float(tx.sp500_gain_percentage),
+                "difference": float(tx.performance_gap),
+                "durationDay": float(tx.holding_duration),
+                "annualizedPercentage": float(tx.annualized_return),
+                "capitalGainOrLoss": float(tx.total_gain),
+                "capitalGainOrLossPercentage": float(tx.gain_percentage),
+                "dividendAmount": float(tx.dividend_amount),
+                "dividendYieldPercentage": float(tx.dividend_yield),
+                "quantity": float(tx.quantity),
+                "pru": float(tx.stock_price),
+                "fees": float(tx.transaction_fees),
+            })
+
+        # Tri en décroissant sur amountInvest
+        result_sorted = sorted(result, key=lambda x: x["dateBuy"], reverse=True)
+
+        return Response(result_sorted)
+
+class PortfolioAllTransactionsCompareDetailView(APIView):
+    """
+    Retourne les performances détaillées de toutes les transactions d'un portefeuille,
+    avec toutes les comparaisons SP500.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, portfolio_id):
+        user = request.user
+
+        # Vérifie que le portefeuille appartient à l'utilisateur
+        portfolio = get_object_or_404(Portfolio, id=portfolio_id, user=user)
+
+        # Récupère tous les tickers du portefeuille
+        portfolio_tickers = PortfolioTicker.objects.filter(portfolio=portfolio)
+
+        result = []
+
+        for ticker_obj in portfolio_tickers:
+            ticker = ticker_obj.ticker.ticker
+            logo_url = request.build_absolute_uri(f"/static/logos/{ticker}.png")
+
+            # Récupère toutes les transactions pour ce ticker, tri croissant
+            transactions = TransactionCompareSP500.objects.filter(
+                user=user,
+                portfolio=portfolio,
+                ticker=ticker_obj
+            ).order_by("date", "id")  # trier par date puis par id pour stabilité
+
+            for tx in transactions:
+                result.append({
+                    "ticker": ticker,
+                    "logo": logo_url,
+                    "dateBuy": tx.date,
+                    "amount": float(tx.purchase_amount),
+                    "stockValue": float(tx.current_value),
+                    "gains": float(tx.total_gain),
+                    "gainsPercentage": float(tx.gain_percentage),
+                    "gainsSP500": float(tx.sp500_value),
+                    "gainsPercentageSP500": float(tx.sp500_gain_percentage),
+                    "difference": float(tx.performance_gap),
+                    "durationDay": float(tx.holding_duration),
+                    "annualizedPercentage": float(tx.annualized_return),
+                    "capitalGainOrLoss": float(tx.total_gain),
+                    "capitalGainOrLossPercentage": float(tx.gain_percentage),
+                    "dividendAmount": float(tx.dividend_amount),
+                    "dividendYieldPercentage": float(tx.dividend_yield),
+                    "quantity": float(tx.quantity),
+                    "pru": float(tx.stock_price),
+                    "fees": float(tx.transaction_fees),
+                })
+
+        # Numérotation unique globale de la plus ancienne à la plus récente
+        result_sorted = sorted(result, key=lambda x: (x["dateBuy"], x["ticker"]))
+        for idx, tx in enumerate(result_sorted, start=1):
+            tx["id"] = idx
+
+        # Tri final pour l'affichage : de la plus récente à la plus ancienne
+        result_display = sorted(result_sorted, key=lambda x: x["id"], reverse=True)
+
+        return Response(result_display)
+
+class PortfolioTickerPerformanceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, portfolio_id):
+        user = request.user
+
+        # Récupérer le dernier calculated_at par ticker pour ce portefeuille
+        latest_perfs = (
+            TickerPerformanceCompareSP500.objects.filter(
+                portfolio__user=user,
+                portfolio__id=portfolio_id
+            )
+            .values('ticker')  # group by ticker
+            .annotate(latest_id=Max('id'))  # récupérer la dernière entrée
+        )
+
+        # Récupérer les objets complets
+        performances = TickerPerformanceCompareSP500.objects.filter(
+            id__in=[item['latest_id'] for item in latest_perfs]
+        )
+
+        result = {"Montant": [], "%": [], "% / an": [], "sp500": []}
+
+        for perf in performances:
+            if not perf.ticker:
+                continue
+            company = perf.ticker.ticker  # PortfolioTicker -> Company
+            company_name = company.name
+            ticker_symbol = company.ticker
+            logo_url = request.build_absolute_uri(f"/static/logos/{company.ticker}.png")
+            
+            # Montant en euros
+            amount_value = float(perf.total_gain)
+            if perf.currency != "EUR":
+                amount_value = StockPrice.convert_price(
+                    amount_value,
+                    from_currency=perf.currency,
+                    to_currency="EUR",
+                    date=perf.calculated_at
+                )
+
+            result["Montant"].append({
+                "companyName": company_name,
+                "ticker": ticker_symbol,
+                "logoUrl": logo_url,
+                "value": float(perf.total_gain),
+            })
+            result["%"].append({
+                "companyName": company_name,
+                "ticker": ticker_symbol,
+                "logoUrl": logo_url,
+                "value": float(perf.gain_percentage),
+            })
+            result["% / an"].append({
+                "companyName": company_name,
+                "ticker": ticker_symbol,
+                "logoUrl": logo_url,
+                "value": float(perf.annualized_return),
+            })
+            result["sp500"].append({
+                "companyName": company_name,
+                "ticker": ticker_symbol,
+                "logoUrl": logo_url,
+                "value": float(perf.performance_gap),
+            })
+
+        # Tri décroissant par "value" pour chaque sous-liste
+        for key in result:
+            result[key] = sorted(result[key], key=lambda x: x["value"], reverse=True)
+
+        return Response(result)
 
 
 
