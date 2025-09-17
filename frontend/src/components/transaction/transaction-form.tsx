@@ -160,9 +160,11 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     if (["buy", "sell"].includes(operation)) {
       payload.portfolio_ticker = formData.ticker.toUpperCase();
       payload.stock_price = formData.stock_price;
+      payload.currency = formData.currency; // ⬅️ ajouter ceci
     } else if (["dividend"].includes(operation)) {
       payload.portfolio_ticker = formData.ticker.toUpperCase();
       payload.quantity = formData.quantity;
+      payload.currency = formData.currency; // ⬅️ ajouter également
     } else if (["deposit", "withdrawal", "interest"].includes(operation)) {
       payload.currency = formData.currency;
     }

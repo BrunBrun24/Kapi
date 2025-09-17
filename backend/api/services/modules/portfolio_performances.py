@@ -9,7 +9,7 @@ from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAver
 from api.services.modules.portfolios.replication import Replication
 from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
-class PorfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
+class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
     def __init__(self, user, portfolios, start_date: datetime = None, tickers_valuations: dict = {}):
         self.user = user
         self.tickers_valuations = tickers_valuations
@@ -228,7 +228,7 @@ class PorfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         # Calcul pour chaque benchmark
         for portfolio_allocation in portfolios_allocation:
             benchmarks_performances = self.dca(portfolio_allocation, benchmarks_prices, money, start_date, self.end_date)
-            self.save_performance_benchmarks(self.performances, benchmarks_performances, portfolio_allocation[-1])
+            self._save_performance_benchmarks(self.performances, benchmarks_performances, portfolio_allocation[-1])
 
         # Si pas de start_date (cas "réel"), on enregistre en base
         if start_date is None:
@@ -324,7 +324,7 @@ class PorfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
                 all_performance[key][portfolio_name] = performance[key]
 
     @staticmethod
-    def save_performance_benchmarks(all_performance: dict, performance: pd.DataFrame, portfolio_name: str):
+    def _save_performance_benchmarks(all_performance: dict, performance: pd.DataFrame, portfolio_name: str):
         """
         Sauvegarde ou met à jour les performances des benchmarks pour un portefeuille donné.
 

@@ -11,7 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')  # Remplace 
 django.setup()
 
 from api.models import Portfolio
-from api.services.modules.portfolio_performances import PorfolioPerformances
+from api.services.modules.portfolio_performances import PortfolioPerformances
 from api.services.modules.compare_transactions_sp500 import ComparePortfolioSP500
 
 
@@ -29,5 +29,5 @@ if __name__ == "__main__":
         user = User.objects.get(pk=user_id)
         portfolios = Portfolio.objects.filter(user=user)
         
-        calcul_portfolio = PorfolioPerformances(user, portfolios)
+        calcul_portfolio = PortfolioPerformances(user, portfolios)
         # calcul_portfolio = ComparePortfolioSP500(user, portfolios)

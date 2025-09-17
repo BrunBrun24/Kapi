@@ -20,12 +20,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
     AddPortfolioTickerView, PortfolioAllTransactionsCompareDetailView, PortfolioPerformanceDynamicView, PortfolioPositionSummaryView, PortfolioTickerCurrenciesView, PortfolioTickerPerformanceView, PortfolioTransactionCompareDetailView, UserPortfolioPerformanceRepartitionAllPortfolio, UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
-    CreateUserView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView
+    UserCreateView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView
 )
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/user/register/", CreateUserView.as_view()),
+    path("api/user/register/", UserCreateView.as_view()),
     path("api/token/", TokenObtainPairView.as_view()),
     path("api/token/refresh/", TokenRefreshView.as_view()),
     path("api-auth/", include("rest_framework.urls")),
