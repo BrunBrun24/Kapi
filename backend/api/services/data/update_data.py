@@ -30,4 +30,33 @@ if __name__ == "__main__":
         portfolios = Portfolio.objects.filter(user=user)
         
         calcul_portfolio = PortfolioPerformances(user, portfolios)
-        # calcul_portfolio = ComparePortfolioSP500(user, portfolios)
+        calcul_portfolio = ComparePortfolioSP500(user, portfolios)
+
+
+# from api.models import Portfolio, PortfolioTicker, PortfolioTransaction, PortfolioPerformance, TransactionCompareSP500, TickerPerformanceCompareSP500
+
+# User = get_user_model()
+
+# try:
+#     user = User.objects.get(email="z@z.com")
+# except User.DoesNotExist:
+#     print("Utilisateur introuvable")
+# else:
+#     # Supprimer toutes les performances liées
+#     PortfolioPerformance.objects.filter(user=user).delete()
+#     TransactionCompareSP500.objects.filter(user=user).delete()
+#     TickerPerformanceCompareSP500.objects.filter(user=user).delete()
+    
+#     # Supprimer toutes les transactions liées
+#     PortfolioTransaction.objects.filter(user=user).delete()
+    
+#     # Supprimer les tickers de portefeuilles
+#     PortfolioTicker.objects.filter(portfolio__user=user).delete()
+    
+#     # Supprimer les portefeuilles
+#     Portfolio.objects.filter(user=user).delete()
+    
+#     # Enfin supprimer l'utilisateur
+#     user.delete()
+    
+#     print("Utilisateur et toutes ses données ont été supprimés.")

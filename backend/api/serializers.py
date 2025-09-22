@@ -44,7 +44,7 @@ class PortfolioSerializer(serializers.ModelSerializer):
 class PortfolioTickerSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortfolioTicker
-        fields = ["portfolio", "ticker", "currency"]
+        fields = ["ticker", "currency"]
 
     def change_currency(self, new_currency):
         self.instance.currency = new_currency
@@ -81,8 +81,6 @@ class PortfolioTransactionBaseSerializer(serializers.ModelSerializer):
         elif operation == "interest":
             if portfolio_ticker:
                 raise serializers.ValidationError("Le ticker ne doit pas être renseigné pour un intérêt.")
-            if quantity is None:
-                raise serializers.ValidationError("La quantité est requise pour un intérêt.")
             if not currency:
                 raise serializers.ValidationError("La devise est requise pour un intérêt.")
 
@@ -157,43 +155,3 @@ class PortfolioTransactionUpdateSerializer(PortfolioTransactionBaseSerializer):
 
         self._validate_transaction_fields(portfolio, operation, portfolio_ticker, stock_price, quantity, currency)
         return data
-
-
-# -------------------- DETAIL --------------------
-class PortfolioTransactionDetailSerializer(PortfolioTransactionBaseSerializer):
-    portfolio = serializers.StringRelatedField()
-    ticker = serializers.SerializerMethodField()
-    name = serializers.SerializerMethodField()
-    stock_price = serializers.SerializerMethodField()
-    fees = serializers.SerializerMethodField()
-    amount = serializers.SerializerMethodField()
-    quantity = serializers.SerializerMethodField()
-    currency = serializers.SerializerMethodField()
-
-    class Meta:
-        model = PortfolioTransaction
-        fields = [
-            'portfolio', 'operation', 'stock_price', 'date', 'currency',
-            'amount', 'quantity', 'fees', 'name', 'ticker', 'id'
-        ]
-
-    def get_ticker(self, obj):
-        return obj.portfolio_ticker.ticker.ticker if obj.portfolio_ticker and obj.portfolio_ticker.ticker else ""
-
-    def get_name(self, obj):
-        return obj.portfolio_ticker.ticker.name if obj.portfolio_ticker and obj.portfolio_ticker.ticker else ""
-
-    def get_currency(self, obj):
-        return dict(CURRENCY_CHOICES).get(obj.currency, obj.currency or "")
-
-    def get_stock_price(self, obj):
-        return self._round(obj.stock_price)
-
-    def get_fees(self, obj):
-        return self._round(obj.fees)
-
-    def get_amount(self, obj):
-        return self._round(obj.amount)
-
-    def get_quantity(self, obj):
-        return self._round(obj.quantity, 6)

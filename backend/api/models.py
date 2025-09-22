@@ -150,19 +150,45 @@ class StockPrice(models.Model):
 
     @classmethod
     def convert_dataframe_to_currency(cls, df: pd.DataFrame, target_currency: str) -> pd.DataFrame:
+        """
+        Convertit les colonnes (tickers) d'un DataFrame vers la devise cible (USD ou EUR) de façon vectorisée.
+
+        :param df: DataFrame avec colonnes = tickers, index = dates
+        :param target_currency: "USD" ou "EUR"
+        :return: DataFrame converti
+        """
         if df.empty:
             return df
-        if target_currency not in ["USD", "EUR"]:
+
+        if target_currency not in ("USD", "EUR"):
             raise ValueError("La devise cible doit être USD ou EUR")
-        tickers_currencies = dict(Company.objects.filter(ticker__in=df.columns).values_list("ticker", "currency"))
-        fx_df = cls._build_open_price_dataframe(cls.objects.filter(ticker_id="EURUSD=X", date__in=df.index))
+
+        # Récupérer les devises des tickers
+        tickers_currencies = dict(
+            Company.objects.filter(ticker__in=df.columns)
+            .values_list("ticker", "currency")
+        )
+
+        # DataFrame des taux EURUSD aligné sur les dates
+        fx_prices = cls.objects.filter(ticker_id="EURUSD=X", date__in=df.index).values("date", "open_price")
+        if not fx_prices.exists():
+            raise ValueError("Pas de données de change disponibles pour EURUSD=X")
+
+        fx_df = pd.DataFrame(fx_prices).set_index("date").sort_index()
         fx_df = fx_df.reindex(df.index).ffill().bfill()
-        converted_df = df.copy()
-        for ticker in df.columns:
-            cur = tickers_currencies.get(ticker)
-            if cur and cur != target_currency:
-                converted_df[ticker] = cls.convert_price(df[ticker], cur, target_currency, df.index[-1])
-        return converted_df
+        fx_series = fx_df["open_price"].astype(float)
+
+        # Identifier colonnes à convertir USD->EUR et EUR->USD
+        usd_cols = [t for t in df.columns if tickers_currencies.get(t) == "USD" and target_currency == "EUR"]
+        eur_cols = [t for t in df.columns if tickers_currencies.get(t) == "EUR" and target_currency == "USD"]
+
+        converted = df.copy()
+        if usd_cols:
+            converted[usd_cols] = converted[usd_cols].div(fx_series, axis=0)
+        if eur_cols:
+            converted[eur_cols] = converted[eur_cols].mul(fx_series, axis=0)
+
+        return converted
 
     @classmethod
     def get_price_on_date(cls, ticker: str, date: datetime, target_currency: str) -> float:

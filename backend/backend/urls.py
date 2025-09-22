@@ -19,8 +19,11 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
-    AddPortfolioTickerView, PortfolioAllTransactionsCompareDetailView, PortfolioPerformanceDynamicView, PortfolioPositionSummaryView, PortfolioTickerCurrenciesView, PortfolioTickerPerformanceView, PortfolioTransactionCompareDetailView, UserPortfolioPerformanceRepartitionAllPortfolio, UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, PortfolioAvailableTickersView, CreatePortfolioView, CurrencyListView, CurrencyTickerView, DeletePortfolioTickerView, DeletePortfolioTransactionView, DeletePortfolioView, ExcelPortfolioTransactionUploadView, PortfolioTickersView, PortfolioTransactionCreateView ,
-    UserCreateView, UpdatePortfolioTransactionView, UserPortfoliosView, PortfolioTransactionsView, UpdatePortfolioView
+    ExcelPortfolioTransactionUploadView, PortfolioAllTransactionsCompareDetailView, PortfolioDetailView, PortfolioListCreateView, 
+    PortfolioPerformanceDynamicView, PortfolioPositionSummaryView, PortfolioTickerAvailableView, 
+    PortfolioTickerCurrenciesView, PortfolioTickerDeleteView, PortfolioTickerListCreateView, 
+    PortfolioTickerPerformanceView, PortfolioTransactionCompareDetailView, PortfolioTransactionDetailUpdateDeleteView, PortfolioTransactionListCreateView, UserPortfolioPerformanceRepartitionAllPortfolio, 
+    UserPortfolioPerformanceSummary, UserPortfolioPerformanceTwrDate, UserPortfolios, CurrencyListView, CurrencyTickerView, UserCreateView
 )
 
 urlpatterns = [
@@ -32,24 +35,22 @@ urlpatterns = [
     path("api/", include("api.urls")),
 
     # Portefeuille
-    path("api/portfolio/create/", CreatePortfolioView.as_view()),
-    path('api/portfolios/', UserPortfoliosView.as_view()),
-    path('api/portfolios/<int:portfolio_id>/delete/', DeletePortfolioView.as_view()),
-    path('api/portfolio/<int:pk>/update/', UpdatePortfolioView.as_view()),
+    path("api/portfolios/", PortfolioListCreateView.as_view()),
+    path("api/portfolios/<int:pk>/", PortfolioDetailView.as_view()),
 
     # Portefeuille Ticker
-    path('api/portfolio/ticker/', AddPortfolioTickerView.as_view()),
-    path("api/portfolio/<int:portfolio_id>/ticker/<str:ticker>/<str:currency>/delete/", DeletePortfolioTickerView.as_view()),
-    path('api/portfolio/<int:portfolio_id>/tickers/', PortfolioTickersView.as_view()),
-    path('api/portfolio/<int:portfolio_id>/available-tickers/', PortfolioAvailableTickersView.as_view()),
-    path("api/portfolio/<int:portfolio_id>/ticker/<str:ticker>/currencies/", PortfolioTickerCurrenciesView.as_view()),
+    path('api/portfolios/<int:portfolio_id>/tickers/', PortfolioTickerListCreateView.as_view()),
+    path('api/portfolios/<int:portfolio_id>/tickers/available/', PortfolioTickerAvailableView.as_view()),
+    path('api/portfolios/<int:portfolio_id>/tickers/<str:ticker>/currencies/', PortfolioTickerCurrenciesView.as_view()),
+    path('api/portfolios/<int:portfolio_id>/tickers/<str:ticker>/<str:currency>/', PortfolioTickerDeleteView.as_view()),
 
     # Transaction
-    path("api/portfolio-transaction/create/", PortfolioTransactionCreateView .as_view()),
-    path("api/portfolio-transaction/<int:portfolio_id>", PortfolioTransactionsView.as_view()),
-    path("api/portfolio-transaction/<int:transaction_id>/delete", DeletePortfolioTransactionView.as_view()),
-    path("api/portfolio-transaction/<int:pk>/update", UpdatePortfolioTransactionView.as_view()),
-    path("api/upload-excel/transaction/", ExcelPortfolioTransactionUploadView.as_view()),
+    path("api/portfolios/<int:portfolio_id>/transactions/", PortfolioTransactionListCreateView.as_view()),
+    path("api/transactions/<int:pk>/", PortfolioTransactionDetailUpdateDeleteView.as_view()),
+    path("api/portfolios/<int:portfolio_id>/transactions/upload-excel/", ExcelPortfolioTransactionUploadView.as_view()),
+
+
+
 
     # Portefeuille Performance
     path("api/user/portfolio/utilisateur/", UserPortfolioPerformanceSummary.as_view()),

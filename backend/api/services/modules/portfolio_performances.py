@@ -141,6 +141,10 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         # Nom du portefeuille
         portfolio_name = Portfolio.get_user_portfolio_name(self.user.id, portfolio.id)
 
+        save = True
+        if start_date is None:
+            save = True
+
         # Dates de début/fin
         if start_date is None:
             start_date, _ = PortfolioTransaction.first_and_last_date(self.user.id, portfolio.id)
@@ -231,7 +235,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
             self._save_performance_benchmarks(self.performances, benchmarks_performances, portfolio_allocation[-1])
 
         # Si pas de start_date (cas "réel"), on enregistre en base
-        if start_date is None:
+        if save:
             self._save_portfolio_performance(self.user, portfolio, self.performances)
 
 

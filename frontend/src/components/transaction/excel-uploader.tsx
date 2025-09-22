@@ -29,18 +29,22 @@ const ExcelUploader: React.FC<Props> = ({
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedPortfolioId) return;
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("portfolioId", selectedPortfolioId.toString());
 
     try {
-      await api.post("/api/upload-excel/transaction/", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      await api.post(
+        `/api/portfolios/${selectedPortfolioId}/transactions/upload-excel/`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
       setErrorHtml(null); // reset error si succès
       setShowModal(false);
       if (onImportSuccess) onImportSuccess();
@@ -50,10 +54,10 @@ const ExcelUploader: React.FC<Props> = ({
         setErrorHtml(error.response.data);
       } else {
         console.error("❌ Erreur lors de l'envoi du fichier Excel", error);
-        setErrorHtml(error.response.data);
+        setErrorHtml(error.response?.data || "Erreur inconnue");
       }
     } finally {
-      e.target.value = "";
+      e.target.value = ""; // réinitialise input
     }
   };
 

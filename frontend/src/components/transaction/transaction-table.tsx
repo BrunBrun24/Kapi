@@ -2,8 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   Edit,
   Trash2,
-  MoveRight,
-  MoveLeft,
   Percent,
   ShoppingCart,
   BanknoteArrowDown,
@@ -211,8 +209,9 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     const fetchTransactions = async () => {
       try {
         const response = await api.get(
-          `/api/portfolio-transaction/${selectedPortfolioId}`
+          `/api/portfolios/${selectedPortfolioId}/transactions/`
         );
+        console.log(response.data);
         setTransactions(response.data);
       } catch (error) {
         console.error("Erreur lors du chargement des transactions :", error);
@@ -245,9 +244,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     if (!transactionToDelete) return;
 
     try {
-      await api.delete(
-        `api/portfolio-transaction/${transactionToDelete.id}/delete`
-      );
+      await api.delete(`api/transactions/${transactionToDelete.id}/`);
       onRefresh();
     } catch (error) {
       console.error("Erreur lors de la suppression de la transaction", error);
@@ -501,29 +498,33 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     </td>
                     <td
                       className={`numeric ${
-                        transaction.operation === "withdrawal"
-                          ? "negatif"
-                          : transaction.amount - (transaction.fees || 0) > 0
+                        ["sell", "dividend", "interest", "deposit"].includes(
+                          transaction.operation
+                        )
                           ? "positive"
-                          : transaction.amount - (transaction.fees || 0) < 0
-                          ? "negatif"
-                          : ""
+                          : "negatif"
                       }`}
                     >
                       {(() => {
-                        const amount =
-                          transaction.operation === "withdrawal"
-                            ? -transaction.amount
-                            : transaction.amount;
+                        const amount = [
+                          "sell",
+                          "dividend",
+                          "interest",
+                          "deposit",
+                        ].includes(transaction.operation)
+                          ? transaction.amount
+                          : -transaction.amount;
 
                         const netAmount = amount - (transaction.fees || 0);
 
-                        const symbol =
-                          transaction.operation === "withdrawal"
-                            ? ""
-                            : transaction.amount - (transaction.fees || 0) > 0
-                            ? "+"
-                            : "";
+                        const symbol = [
+                          "sell",
+                          "dividend",
+                          "interest",
+                          "deposit",
+                        ].includes(transaction.operation)
+                          ? "+"
+                          : "";
 
                         return (
                           symbol +

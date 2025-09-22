@@ -56,12 +56,11 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
   const tickerDropdownRef = useRef<HTMLDivElement>(null);
   const currencyDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch tickers in portfolio
   const fetchTickersInPortfolio = async () => {
     if (!selectedPortfolioId) return;
     try {
       const res = await api.get(
-        `/api/portfolio/${selectedPortfolioId}/tickers/`
+        `/api/portfolios/${selectedPortfolioId}/tickers/`
       );
       const sortedTickers = res.data.sort((a: Ticker, b: Ticker) =>
         a.ticker.localeCompare(b.ticker)
@@ -72,12 +71,11 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     }
   };
 
-  // Fetch tickers not in portfolio
   const fetchTickersNotInPortfolio = async () => {
     if (!selectedPortfolioId) return;
     try {
       const res = await api.get(
-        `/api/portfolio/${selectedPortfolioId}/available-tickers/`
+        `/api/portfolios/${selectedPortfolioId}/tickers/available/`
       );
       setTickersNotInPortfolio(res.data);
     } catch (error) {
@@ -174,11 +172,13 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     if (!selectedPortfolioId) return;
 
     try {
-      const response = await api.post("/api/portfolio/ticker/", {
-        portfolio: selectedPortfolioId,
-        ticker: formData.ticker.toUpperCase(),
-        currency: formData.currencies,
-      });
+      const response = await api.post(
+        `/api/portfolios/${selectedPortfolioId}/tickers/`,
+        {
+          ticker: formData.ticker.toUpperCase(),
+          currency: formData.currencies,
+        }
+      );
 
       if (response.status !== 201) throw new Error("Failed to add ticker");
 
@@ -186,6 +186,8 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
       setSearchTicker("");
       setSearchCurrency("");
       setIsFormOpen(false);
+
+      // Rafraîchir les tickers
       await fetchTickersInPortfolio();
       await fetchTickersNotInPortfolio();
     } catch (error) {
@@ -198,8 +200,9 @@ const PortfolioTickers: React.FC<PortfolioIdProps> = ({
     if (!tickerToDelete || !selectedPortfolioId) return;
     try {
       await api.delete(
-        `api/portfolio/${selectedPortfolioId}/ticker/${tickerToDelete.ticker}/${tickerToDelete.currency}/delete/`
+        `/api/portfolios/${selectedPortfolioId}/tickers/${tickerToDelete.ticker}/${tickerToDelete.currency}/`
       );
+
       await fetchTickersInPortfolio();
       await fetchTickersNotInPortfolio();
     } catch (error) {

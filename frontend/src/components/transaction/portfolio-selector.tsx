@@ -64,7 +64,7 @@ const PortfolioSelector: React.FC = () => {
     };
 
     try {
-      const res = await api.post("/api/portfolio/create/", newPortfolioData);
+      const res = await api.post("/api/portfolios/", newPortfolioData);
       const newPortfolio: Portfolio = res.data;
       const updated = [...portfolios, newPortfolio];
       setPortfolios(updated);
@@ -80,7 +80,7 @@ const PortfolioSelector: React.FC = () => {
     if (!portfolioToDelete) return;
 
     try {
-      await api.delete(`/api/portfolios/${portfolioToDelete.id}/delete/`);
+      await api.delete(`/api/portfolios/${portfolioToDelete.id}/`);
       setPortfolios((prev) =>
         prev.filter((p) => p.id !== portfolioToDelete.id)
       );
@@ -115,7 +115,7 @@ const PortfolioSelector: React.FC = () => {
 
     if (formValues) {
       try {
-        const response = await api.put(`/api/portfolio/${id}/update/`, {
+        const response = await api.put(`/api/portfolios/${id}/`, {
           name: formValues.name,
         });
 

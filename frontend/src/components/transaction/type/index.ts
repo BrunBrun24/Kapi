@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 export interface Portfolio {
   id: string;
   name: string;
-  lastModified: number;
 }
 
 export interface Transaction {

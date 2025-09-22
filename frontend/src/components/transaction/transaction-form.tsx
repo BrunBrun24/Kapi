@@ -30,9 +30,16 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     currency: "",
   });
 
-  const [tickers, setTickers] = useState<{ ticker: string; name: string }[]>(
-    []
-  );
+  const [tickers, setTickers] = useState<
+    {
+      id: number;
+      ticker: string;
+      name: string;
+      logo: string;
+      currency: string;
+      portfolio: number;
+    }[]
+  >([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredTickers, setFilteredTickers] = useState<
     { ticker: string; name: string }[]
@@ -84,7 +91,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     if (!selectedPortfolioId) return;
     try {
       const response = await api.get(
-        `/api/portfolio/${selectedPortfolioId}/tickers/`
+        `/api/portfolios/${selectedPortfolioId}/tickers/`
       );
       setTickers(response.data);
     } catch (error) {
@@ -158,28 +165,34 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
     payload.portfolio = selectedPortfolioId;
 
     if (["buy", "sell"].includes(operation)) {
-      payload.portfolio_ticker = formData.ticker.toUpperCase();
+      const pt = tickers.find((t) => t.ticker === formData.ticker);
+      if (!pt) return;
+      payload.portfolio_ticker = pt.id;
       payload.stock_price = formData.stock_price;
-      payload.currency = formData.currency; // ⬅️ ajouter ceci
+      payload.currency = formData.currency;
     } else if (["dividend"].includes(operation)) {
-      payload.portfolio_ticker = formData.ticker.toUpperCase();
+      const pt = tickers.find((t) => t.ticker === formData.ticker);
+      if (!pt) return;
+      payload.portfolio_ticker = pt.id;
       payload.quantity = formData.quantity;
-      payload.currency = formData.currency; // ⬅️ ajouter également
+      payload.currency = formData.currency;
     } else if (["deposit", "withdrawal", "interest"].includes(operation)) {
       payload.currency = formData.currency;
     }
 
     try {
       if (editMode && transactionId) {
+        // Update transaction
         const response = await api.put(
-          `/api/portfolio-transaction/${transactionId}/update`,
+          `/api/transactions/${transactionId}/`,
           payload
         );
         if (response.status !== 200)
           throw new Error("Failed to update transaction");
       } else {
+        // Create transaction
         const response = await api.post(
-          "/api/portfolio-transaction/create/",
+          `/api/portfolios/${selectedPortfolioId}/transactions/`,
           payload
         );
         if (response.status !== 201)
@@ -208,6 +221,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
       fees: 0,
       currency: "",
     });
+    setSearchQuery("");
     setIsFormOpen(false);
     setEditMode(false);
     setTransactionId(null);
@@ -269,7 +283,7 @@ const TransactionForm: React.FC<PortfolioIdProps> = ({
 
       try {
         const response = await api.get(
-          `/api/portfolio/${selectedPortfolioId}/ticker/${formData.ticker}/currencies/`
+          `/api/portfolios/${selectedPortfolioId}/tickers/${formData.ticker}/currencies/`
         );
         const currencies = response.data.currencies;
         setAvailableCurrencies(currencies);
