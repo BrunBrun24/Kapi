@@ -18,7 +18,6 @@ import api from "@/api";
 
 import {
   portfolioGlobalName,
-  type PortfolioData,
   type UserPortfolio,
 } from "@/components/analytics/type";
 
@@ -131,24 +130,16 @@ export function NavigationBar() {
 
       {/* Contenu dynamique */}
       <div className="p-4">
-        {activeTab === "dashboard" && (
+        {activeTab === "dashboard" && selectedPortfolio && (
           <DashboardPage selectedPortfolio={selectedPortfolio} />
         )}
-        {activeTab === "performance" && (
-          <PerformancePage
-            selectedPortfolio={selectedPortfolio}
-          />
+        {activeTab === "performance" && selectedPortfolio && (
+          <PerformancePage selectedPortfolio={selectedPortfolio} />
         )}
-        {activeTab === "titres" && (
-          <TitresPage
-            selectedPortfolio={selectedPortfolio}
-          />
+        {activeTab === "titres" && selectedPortfolio && (
+          <TitresPage selectedPortfolio={selectedPortfolio} />
         )}
-        {activeTab === "dividendes" && (
-          <DividendsPage
-            selectedPortfolio={selectedPortfolio}
-          />
-        )}
+        {activeTab === "dividendes" && selectedPortfolio && <DividendsPage />}
       </div>
     </div>
   );

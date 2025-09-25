@@ -1,12 +1,13 @@
-import type { ReactNode } from "react";
+import type { JSX } from "react";
 
+// Un portefeuille
 export interface Portfolio {
   id: string;
   name: string;
 }
 
-export interface Transaction {
-  symbol: ReactNode;
+// Transaction liée à un portefeuille
+export interface PortfolioTransaction {
   id: string;
   portfolioId: string;
   ticker: string;
@@ -18,27 +19,31 @@ export interface Transaction {
     | "interest"
     | "deposit"
     | "withdrawal";
-  stock_price: number;
+  stockPrice: number;
   quantity: number;
   amount: number;
   date: string;
   fees: number;
   currency: string;
+  symbol: string | JSX.Element;
 }
 
-export interface Ticker {
+// Ticker présent dans un portefeuille
+export interface PortfolioTicker {
   ticker: string;
   name: string;
   currency: string;
   logo: string;
 }
 
-export interface TickerNotInPortfolio {
+// Ticker disponible mais non détenu
+export interface AvailableTicker {
   ticker: string;
   name: string;
   currencies: string[];
 }
 
+// Devise
 export interface Currency {
   code: string;
   label: string;

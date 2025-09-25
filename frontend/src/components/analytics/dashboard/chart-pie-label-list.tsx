@@ -1,19 +1,14 @@
 "use client";
 
-import { Pie, PieChart } from "recharts";
+import api from "@/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-  portfolioGlobalName,
-  UserPortfolio,
-  type PortfolioData
-} from "@/components/analytics/type";
 import { useEffect, useState } from "react";
-import api from "@/api";
+import { Pie, PieChart } from "recharts";
 
 // Fonction pour afficher les noms des navigateurs à l'extérieur
 function renderBrowserLabel({
@@ -89,15 +84,19 @@ type ChartDataItem = {
 export function ChartPieLabelList({
   title,
   height,
-  size
+  size,
 }: ChartPieLabelListProps) {
   const [chartData, setChartData] = useState<ChartDataItem[] | null>(null);
-  const [chartConfig, setChartConfig] = useState<Record<string, any> | null>(null);
+  const [chartConfig, setChartConfig] = useState<Record<string, any> | null>(
+    null
+  );
 
   useEffect(() => {
     const getUserPortfolioData = async () => {
       try {
-        const res = await api.get("/api/portfolio-performance/portfolio/repartition/");
+        const res = await api.get(
+          "/api/portfolio-performance/portfolio/repartition/"
+        );
         const data = res.data;
         setChartData(data[0]);
         setChartConfig(data[1]);
@@ -119,7 +118,9 @@ export function ChartPieLabelList({
           <CardTitle className="text-2xl font-bold">{title}</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 pb-0 flex items-center justify-center">
-          <p className="text-sm text-muted-foreground">Chargement en cours...</p>
+          <p className="text-sm text-muted-foreground">
+            Chargement en cours...
+          </p>
         </CardContent>
       </Card>
     );

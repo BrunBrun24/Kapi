@@ -2,7 +2,7 @@ import React from "react";
 
 import { BarMonth } from "@/components/analytics/dividends/bar-month";
 
-export default function DividendsPage({ data }: PortfolioPerformances) {
+export default function DividendsPage() {
   return (
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4">

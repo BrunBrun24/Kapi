@@ -1,25 +1,10 @@
 "use client";
 
-import { TrendingUp } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis } from "recharts";
-import { BarChart3, LineChart } from "lucide-react";
 import { ChartBarLabel } from "@/components/analytics/dividends/chart-bar-label";
 import { ChartTooltipAdvanced } from "@/components/analytics/dividends/chart-tooltip-advanced";
+import { BarChart3, LineChart } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,

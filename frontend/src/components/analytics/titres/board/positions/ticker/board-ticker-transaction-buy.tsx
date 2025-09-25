@@ -19,6 +19,10 @@ import {
 } from "@tanstack/react-table";
 import * as React from "react";
 
+import api from "@/api";
+import { TableDataTicker } from "@/components/analytics/titres/board/type";
+import { UserPortfolio } from "@/components/analytics/type";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -26,6 +30,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -36,25 +47,12 @@ import {
 } from "@/components/ui/table";
 import {
   ArrowUpDown,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { TableDataTicker } from "@/components/analytics/titres/board/type";
-import { SelectedPortfolio, UserPortfolio } from "@/components/analytics/type";
 import { useEffect } from "react";
-import api from "@/api";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 function formatValueWithColor(
   value: number,
@@ -308,7 +306,7 @@ const verticalBordersIndexes = [0, 1, 2, 4, 6, 9, 11, 13, 16];
 type BoardTickerTransactionBuyProps = {
   ticker: string;
   setOpen: (value: boolean) => void;
-  selectedPortfolio?: UserPortfolio;
+  selectedPortfolio: UserPortfolio;
 };
 
 export function BoardTickerTransactionBuy({
@@ -325,8 +323,6 @@ export function BoardTickerTransactionBuy({
   const [performances, setPerformances] = React.useState<any[]>([]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

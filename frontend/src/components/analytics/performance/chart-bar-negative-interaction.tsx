@@ -1,20 +1,21 @@
 "use client";
 
 import {
+  formSchemaYearPortfolioBenchmark,
+  FormValuesYearPortfolioBenchmark,
+} from "@/components/analytics/performance/type";
+import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   LabelList,
   ReferenceLine,
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  formSchemaYearPortfolioBenchmark,
-  FormValuesYearPortfolioBenchmark,
-} from "@/components/analytics/performance/type";
 
+import api from "@/api";
+import { FormYearPortfolioBenchmark } from "@/components/analytics/performance/form-chart-bar-negative-interaction";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartConfig,
@@ -22,11 +23,9 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { FormYearPortfolioBenchmark } from "@/components/analytics/performance/form-chart-bar-negative-interaction";
 import { useEffect, useState } from "react";
-import api from "@/api";
+import { FormProvider, useForm } from "react-hook-form";
 import { UserPortfolio } from "../type";
 
 type MonthlyPercentage = Record<
@@ -219,7 +218,7 @@ function mergeChartData(
 type ChartBarNegativeInteractionProps = {
   title: string;
   height: number;
-  selectedPortfolio?: UserPortfolio;
+  selectedPortfolio: UserPortfolio;
 };
 
 export function ChartBarNegativeInteraction({
@@ -248,7 +247,7 @@ export function ChartBarNegativeInteraction({
 
   const chartDataPorfolio = buildChartData(
     monthlyPercentage,
-    selectedPortfolio?.name,
+    selectedPortfolio.name,
     selectedYear
   );
 
@@ -261,8 +260,6 @@ export function ChartBarNegativeInteraction({
   const mergedChartData = mergeChartData(chartDataPorfolio, chartDataBenchmark);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

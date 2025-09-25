@@ -68,7 +68,10 @@ export const CustomTick: React.FC<CustomTickProps> = ({
         width={logoSize}
         height={logoSize}
         preserveAspectRatio="xMidYMid slice"
-      />
+        aria-label={`${item.companyName} logo`}
+      >
+        <title>{`${item.companyName} logo`}</title>
+      </image>
 
       {/* Ticker à droite du logo */}
       <text
@@ -91,7 +94,7 @@ export const CustomTick: React.FC<CustomTickProps> = ({
 };
 
 type ChartBarLabelProps = {
-  selectedPortfolio?: UserPortfolio;
+  selectedPortfolio: UserPortfolio;
   height?: number;
 };
 
@@ -104,8 +107,6 @@ export function ChartBarLabel({
   const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

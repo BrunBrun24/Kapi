@@ -6,14 +6,12 @@ import { NavBar } from "@/components/analytics/titres/board/navigation-board";
 import { ChartBarLabel } from "@/components/analytics/titres/chart-bar-label";
 import { SelectedPortfolio } from "../type";
 
-export default function TitresPage({
-  selectedPortfolio,
-}: SelectedPortfolio) {
+export default function TitresPage({ selectedPortfolio }: SelectedPortfolio) {
   return (
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <ChartBarLabel selectedPortfolio={selectedPortfolio}/>
-        <NavBar selectedPortfolio={selectedPortfolio}/>
+        <ChartBarLabel selectedPortfolio={selectedPortfolio} />
+        <NavBar selectedPortfolio={selectedPortfolio} />
 
         <div className="flex w-full gap-4">
           <div className="w-[40%]">

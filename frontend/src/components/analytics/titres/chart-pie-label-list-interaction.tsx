@@ -1,6 +1,5 @@
 "use client";
 
-import { Pie, PieChart } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartConfig,
@@ -9,13 +8,14 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { FormProvider, useForm } from "react-hook-form";
+import { Pie, PieChart } from "recharts";
 
-import { FormType } from "@/components/analytics/titres/form-chart-line-multiple-interaction";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   formSchemaType,
   FormValuesType,
 } from "@/components/analytics/performance/type";
+import { FormType } from "@/components/analytics/titres/form-chart-line-multiple-interaction";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 const chartData = [
   { browser: "Chrome", visitors: 65, fill: "var(--chart-1)" },

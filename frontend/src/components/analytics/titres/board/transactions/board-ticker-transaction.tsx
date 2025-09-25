@@ -19,13 +19,17 @@ import {
 } from "@tanstack/react-table";
 import * as React from "react";
 
+import api from "@/api";
+import { TableDataTicker } from "@/components/analytics/titres/board/type";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -36,24 +40,13 @@ import {
 } from "@/components/ui/table";
 import {
   ArrowUpDown,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
-import { UserPortfolio } from "@/components/analytics/type";
 import { useEffect } from "react";
-import api from "@/api";
-import { TableDataTicker } from "@/components/analytics/titres/board/type";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SelectedPortfolio } from "@/components/analytics/type";
 
 function formatValueWithColor(
   value: number,
@@ -296,13 +289,7 @@ const stickyStyles = [
 ];
 const verticalBordersIndexes = [0, 1, 2, 4, 6, 9, 11, 13, 16];
 
-type BoardAllTransactionsProps = {
-  selectedPortfolio?: UserPortfolio;
-};
-
-export function BoardAllTransactions({
-  selectedPortfolio,
-}: BoardAllTransactionsProps) {
+export function BoardAllTransactions({ selectedPortfolio }: SelectedPortfolio) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
@@ -312,8 +299,6 @@ export function BoardAllTransactions({
   const [performances, setPerformances] = React.useState<any[]>([]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

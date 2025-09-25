@@ -13,6 +13,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 
+import api from "@/api";
 import { FormDatePortfolioBenchmark } from "@/components/analytics/chart/form-chart-line-multiple-interaction";
 import {
   formSchemaDatePortfolioBenchmark,
@@ -20,12 +21,9 @@ import {
 } from "@/components/analytics/performance/type";
 import {
   portfolioGlobalName,
-  type PortfolioPerformances,
-  type SelectedPortfolio,
   type UserPortfolio,
 } from "@/components/analytics/type";
 import { useEffect, useMemo, useState } from "react";
-import api from "@/api";
 
 const chartConfig = {
   desktop: {
@@ -38,11 +36,10 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-
 type ChartLineMultipleInteractionProps = {
   title: string;
   height: number;
-  selectedPortfolio?: UserPortfolio;
+  selectedPortfolio: UserPortfolio;
 };
 
 export function ChartLineMultipleInteraction({
@@ -77,7 +74,7 @@ export function ChartLineMultipleInteraction({
     if (!rawSelectedDate) return null;
     return new Date(rawSelectedDate).toISOString().slice(0, 10);
   }, [rawSelectedDate]);
-  
+
   const selectedBenchmark = watch("benchmark");
 
   const tickersValuationDict = useMemo(() => {
@@ -127,8 +124,6 @@ export function ChartLineMultipleInteraction({
   }, [selectedDate, tickersValuationDict, selectedPortfolio]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(
@@ -144,8 +139,8 @@ export function ChartLineMultipleInteraction({
         setTickersValuation(data.tickers_valuation);
 
         if (!data.portfolio_twr || data.portfolio_twr.length === 0) return null;
-          const firstEntry = data.portfolio_twr[0];
-          setOldDate(new Date(firstEntry["date"]));
+        const firstEntry = data.portfolio_twr[0];
+        setOldDate(new Date(firstEntry["date"]));
       } catch (error) {
         console.error("Error fetching performance data:", error);
       }
@@ -229,7 +224,7 @@ export function ChartLineMultipleInteraction({
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
 
             <Line
-              dataKey={selectedPortfolio?.name}
+              dataKey={selectedPortfolio.name}
               type="monotone"
               stroke="var(--color-desktop)"
               strokeWidth={2}

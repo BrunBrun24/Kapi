@@ -24,12 +24,12 @@ import {
 } from "@/components/ui/table";
 import { ArrowUpDown } from "lucide-react";
 
-import { TableDataPosition } from "@/components/analytics/titres/board/type";
-import { IconAlertSquareRounded } from "@tabler/icons-react";
-import { BoardTickerTransactionBuy } from "@/components/analytics/titres/board/positions/ticker/board-ticker-transaction-buy";
-import { SelectedPortfolio } from "@/components/analytics/type";
-import { useEffect } from "react";
 import api from "@/api";
+import { BoardTickerTransactionBuy } from "@/components/analytics/titres/board/positions/ticker/board-ticker-transaction-buy";
+import { TableDataPosition } from "@/components/analytics/titres/board/type";
+import { SelectedPortfolio } from "@/components/analytics/type";
+import { IconAlertSquareRounded } from "@tabler/icons-react";
+import { useEffect } from "react";
 
 const columns: ColumnDef<TableDataPosition>[] = [
   {
@@ -287,8 +287,6 @@ export function BoardPositionsTickers({
   const [performances, setPerformances] = React.useState<any[]>([]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

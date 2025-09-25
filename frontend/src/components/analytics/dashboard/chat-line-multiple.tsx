@@ -1,13 +1,13 @@
 "use client";
 
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  XAxis,
-  YAxis, // 👈 Import ajouté
-} from "recharts";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
+import api from "@/api";
+import {
+  portfolioGlobalName,
+  UserPortfolio,
+} from "@/components/analytics/type";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartConfig,
@@ -15,15 +15,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import {
-  PortfolioData,
-  portfolioGlobalName,
-  UserPortfolio,
-} from "@/components/analytics/type";
-import { useEffect, useState } from "react";
-import api from "@/api";
-import { Badge } from "@/components/ui/badge";
 import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 
 const chartConfig = {
   desktop: {
@@ -39,7 +32,7 @@ const chartConfig = {
 type ChartLineMultipleProps = {
   title: string;
   height: number;
-  selectedPortfolio?: UserPortfolio;
+  selectedPortfolio: UserPortfolio;
 };
 
 export function ChartLineMultiple({
@@ -47,11 +40,9 @@ export function ChartLineMultiple({
   height,
   selectedPortfolio,
 }: ChartLineMultipleProps) {
-  const [twr, setTwr] = useState([]);
+  const [twr, setTwr] = useState<Array<Record<string, number>>>([]);
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
         const res = await api.get(

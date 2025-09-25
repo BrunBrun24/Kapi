@@ -13,38 +13,45 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+import api from "@/api";
 import {
   portfolioGlobalName,
-  UserPortfolio,
+  SelectedPortfolio,
 } from "@/components/analytics/type";
 import { useEffect, useState } from "react";
-import api from "@/api";
 
-type CardsSummaryProps = {
-  selectedPortfolio?: UserPortfolio;
-};
-
-export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
-  const [portfolioValuation, setPortfolioValuation] = useState<Array<Record<string, number>>>([]);
-  const [portfolioInvestedAmounts, setPortfolioInvestedAmounts] = useState<Array<Record<string, number>>>([]);
-  const [portfolioGain, setPortfolioGain] = useState<Array<Record<string, number>>>([]);
+export function CardsSummary({ selectedPortfolio }: SelectedPortfolio) {
+  const [portfolioValuation, setPortfolioValuation] = useState<
+    Array<Record<string, number>>
+  >([]);
+  const [portfolioInvestedAmounts, setPortfolioInvestedAmounts] = useState<
+    Array<Record<string, number>>
+  >([]);
+  const [portfolioGain, setPortfolioGain] = useState<
+    Array<Record<string, number>>
+  >([]);
   const [twr, setTwr] = useState<Array<Record<string, number>>>([]);
-  const [cagr, setCagr] = useState<Record<string, Record<string, number | null>>>({});
+  const [cagr, setCagr] = useState<
+    Record<string, Record<string, number | null>>
+  >({});
   const [fees, setFees] = useState<Array<Record<string, number>>>([]);
   const [dividendEarn, setDividendEarn] = useState<Record<string, number>>({});
-  const [dividendYield, setDividendYield] = useState<Record<string, number>>({});
+  const [dividendYield, setDividendYield] = useState<Record<string, number>>(
+    {}
+  );
 
   useEffect(() => {
-    if (!selectedPortfolio?.id) return;
-
     const fetchData = async () => {
       try {
-        const res = await api.get(`/api/portfolio-performance/${selectedPortfolio.id}/`, {
-          params: {
-            fields:
-              "portfolio_valuation,portfolio_twr,portfolio_cagr,portfolio_fees,portfolio_dividend_earn,portfolio_dividend_yield,portfolio_invested_amounts,portfolio_gain",
-          },
-        });
+        const res = await api.get(
+          `/api/portfolio-performance/${selectedPortfolio.id}/`,
+          {
+            params: {
+              fields:
+                "portfolio_valuation,portfolio_twr,portfolio_cagr,portfolio_fees,portfolio_dividend_earn,portfolio_dividend_yield,portfolio_invested_amounts,portfolio_gain",
+            },
+          }
+        );
         const data = res.data;
 
         setPortfolioValuation(data.portfolio_valuation || []);
@@ -82,7 +89,9 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
         <CardHeader>
           <CardDescription>Valeur du portefeuille</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {portfolioValuation?.at(-1)?.[portfolioGlobalName]?.toFixed(2) ?? "0.00"}€
+            {portfolioValuation?.at(-1)?.[portfolioGlobalName]?.toFixed(2) ??
+              "0.00"}
+            €
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
@@ -95,13 +104,18 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
                   : "text-red-500 border-red-500"
               }`}
             >
-              {rawTwr !== null && rawTwr > 0 ? <IconTrendingUp /> : <IconTrendingDown />}
+              {rawTwr !== null && rawTwr > 0 ? (
+                <IconTrendingUp />
+              ) : (
+                <IconTrendingDown />
+              )}
               {formattedTwr}%
             </Badge>
             de plus-values latentes
           </div>
           <div className="text-muted-foreground">
-            Montant investi : {portfolioInvestedAmounts?.at(-1)?.[portfolioGlobalName] ?? 0} €
+            Montant investi :{" "}
+            {portfolioInvestedAmounts?.at(-1)?.[portfolioGlobalName] ?? 0} €
           </div>
         </CardFooter>
       </Card>
@@ -111,7 +125,8 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
         <CardHeader>
           <CardDescription>Performance</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {portfolioGain?.at(-1)?.[portfolioGlobalName]?.toFixed(2) ?? "0.00"}€
+            {portfolioGain?.at(-1)?.[portfolioGlobalName]?.toFixed(2) ?? "0.00"}
+            €
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
@@ -124,7 +139,11 @@ export function CardsSummary({ selectedPortfolio }: CardsSummaryProps) {
                   : "text-red-500 border-red-500"
               }`}
             >
-              {rawCagr !== null && rawCagr > 0 ? <IconTrendingUp /> : <IconTrendingDown />}
+              {rawCagr !== null && rawCagr > 0 ? (
+                <IconTrendingUp />
+              ) : (
+                <IconTrendingDown />
+              )}
               {formattedCagr}%
             </Badge>
             CAGR (taux de croissance annualisé)
