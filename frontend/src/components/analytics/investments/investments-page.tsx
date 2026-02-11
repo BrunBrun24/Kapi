@@ -3,7 +3,7 @@ import React from "react";
 import { SelectedPortfolio } from "../type";
 import { GenericBarChart } from "@/components/analytics/hooks/generic-bar-chart";
 
-export default function DividendsPage({
+export default function InvestissementsPage({
   selectedPortfolio,
 }: SelectedPortfolio) {
   return (
@@ -14,8 +14,8 @@ export default function DividendsPage({
             <GenericBarChart
               selectedPortfolio={selectedPortfolio}
               height={500}
-              title="Dividendes"
-              dataType="dividends"
+              title="Investissement"
+              dataType="investissements"
             />
           </div>
         </div>

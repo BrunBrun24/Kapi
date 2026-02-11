@@ -20,12 +20,14 @@ import {
   portfolioGlobalName,
   type UserPortfolio,
 } from "@/components/analytics/type";
+import InvestissementsPage from "./investments/investments-page";
 
 const tabs = [
   { id: "dashboard", label: "Dashboard" },
   { id: "performance", label: "Performance" },
   { id: "titres", label: "Titres" },
   { id: "dividendes", label: "Dividendes" },
+  { id: "investissements", label: "Investissements" },
 ];
 
 export function NavigationBar() {
@@ -139,7 +141,8 @@ export function NavigationBar() {
         {activeTab === "titres" && selectedPortfolio && (
           <TitresPage selectedPortfolio={selectedPortfolio} />
         )}
-        {activeTab === "dividendes" && selectedPortfolio && <DividendsPage />}
+        {activeTab === "dividendes" && selectedPortfolio && <DividendsPage selectedPortfolio={selectedPortfolio} />}
+        {activeTab === "investissements" && selectedPortfolio && <InvestissementsPage selectedPortfolio={selectedPortfolio} />}
       </div>
     </div>
   );

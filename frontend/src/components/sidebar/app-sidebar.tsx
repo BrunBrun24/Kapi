@@ -1,127 +1,192 @@
 "use client";
 
-import * as React from "react";
 import {
-  BarChart3,
-  LineChart,
-  AudioWaveform,
-  Command,
-  Frame,
-  GalleryVerticalEnd,
-  Map,
-  PieChart,
-  Settings2,
-} from "lucide-react";
+  IconCamera,
+  IconChartBar,
+  IconAlignLeft2 ,
+  IconDatabase,
+  IconFileAi,
+  IconFileDescription,
+  IconFileWord,
+  IconFolder,
+  IconHelp,
+  IconInnerShadowTop,
+  IconListDetails,
+  IconReport,
+  IconSearch,
+  IconSettings,
+  IconUsers,
+} from "@tabler/icons-react";
+import * as React from "react";
 
+import { NavDocuments } from "@/components/sidebar/nav-documents";
 import { NavMain } from "@/components/sidebar/nav-main";
-import { NavProjects } from "@/components/sidebar/nav-projects";
+import { NavSecondary } from "@/components/sidebar/nav-secondary";
 import { NavUser } from "@/components/sidebar/nav-user";
-import { TeamSwitcher } from "@/components/sidebar/team-switcher";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarRail,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import {
+  AudioWaveform,
+  BarChart3,
+  Command,
+  Frame,
+  GalleryVerticalEnd,
+  LineChart,
+  Map,
+  PieChart,
+  Settings2,
+} from "lucide-react";
 
-// This is sample data.
 const data = {
   user: {
-    name: "BrunBrun",
-    email: "brunbrun@gmail.com",
-    avatar: "https://logo.clearbit.com/apple.com",
+    name: "shadcn",
+    email: "m@example.com",
+    avatar: "/avatars/shadcn.jpg",
   },
-  teams: [
-    {
-      name: "Acme Inc",
-      logo: GalleryVerticalEnd,
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: AudioWaveform,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: Command,
-      plan: "Free",
-    },
-  ],
   navMain: [
     {
-      title: "Portefeuille",
-      url: "#",
-      icon: BarChart3,
-      isActive: true,
-      items: [
-        {
-          title: "Analyses",
-          url: "/portfolio/analytics",
-        },
-        {
-          title: "Transactions",
-          url: "/portfolio/transactions",
-        },
-      ],
+      title: "Dashboard",
+      url: "/portfolio/analytics",
+      icon: LineChart,
     },
     {
-      title: "Analyses",
+      title: "Transactions",
+      url: "/portfolio/transactions",
+      icon: IconAlignLeft2,
+    },
+    {
+      title: "Analytics",
       url: "#",
-      icon: LineChart,
+      icon: IconChartBar,
+    },
+    {
+      title: "Projects",
+      url: "#",
+      icon: IconFolder,
+    },
+    {
+      title: "Team",
+      url: "#",
+      icon: IconUsers,
+    },
+  ],
+  navClouds: [
+    {
+      title: "Capture",
+      icon: IconCamera,
+      isActive: true,
+      url: "#",
       items: [
         {
-          title: "Entreprise",
+          title: "Active Proposals",
+          url: "#",
+        },
+        {
+          title: "Archived",
           url: "#",
         },
       ],
     },
     {
-      title: "Paramètres",
+      title: "Proposal",
+      icon: IconFileDescription,
       url: "#",
-      icon: Settings2,
       items: [
         {
-          title: "Générale",
+          title: "Active Proposals",
+          url: "#",
+        },
+        {
+          title: "Archived",
+          url: "#",
+        },
+      ],
+    },
+    {
+      title: "Prompts",
+      icon: IconFileAi,
+      url: "#",
+      items: [
+        {
+          title: "Active Proposals",
+          url: "#",
+        },
+        {
+          title: "Archived",
           url: "#",
         },
       ],
     },
   ],
-  projects: [
+  navSecondary: [
     {
-      name: "Design Engineering",
+      title: "Settings",
       url: "#",
-      icon: Frame,
+      icon: IconSettings,
     },
     {
-      name: "Sales & Marketing",
+      title: "Get Help",
       url: "#",
-      icon: PieChart,
+      icon: IconHelp,
     },
     {
-      name: "Travel",
+      title: "Search",
       url: "#",
-      icon: Map,
+      icon: IconSearch,
+    },
+  ],
+  documents: [
+    {
+      name: "Data Library",
+      url: "#",
+      icon: IconDatabase,
+    },
+    {
+      name: "Reports",
+      url: "#",
+      icon: IconReport,
+    },
+    {
+      name: "Word Assistant",
+      url: "#",
+      icon: IconFileWord,
     },
   ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              className="data-[slot=sidebar-menu-button]:!p-1.5"
+            >
+              <a href="#">
+                <IconInnerShadowTop className="!size-5" />
+                <span className="text-base font-semibold">BrunBrun</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        <NavDocuments items={data.documents} />
+        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }
