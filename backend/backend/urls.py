@@ -19,7 +19,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from api.views import (
-    ExcelPortfolioTransactionUploadView, PortfolioAllTransactionsCompareDetailView, PortfolioDetailView, PortfolioListCreateView, 
+    ExcelPortfolioTransactionUploadView, PortfolioDepositYearsListView, PortfolioDepositsByNameMonthView, PortfolioDepositsByPortfolioYearView, PortfolioDepositsMonthView, PortfolioDepositYearView, PortfolioDividendsMonthView, PortfolioDividendsYearsListView, PortfolioAllTransactionsCompareDetailView, PortfolioDetailView, PortfolioDividendsByTickerMonthView, PortfolioDividendsByTickerYearView, PortfolioDividendsYearView, PortfolioListCreateView, 
     PortfolioPerformanceDynamicView, PortfolioPositionSummaryView, PortfolioTickerAvailableView, 
     PortfolioTickerCurrenciesView, PortfolioTickerDeleteView, PortfolioTickerListCreateView, 
     PortfolioTickerPerformanceView, PortfolioTransactionCompareDetailView, PortfolioTransactionDetailUpdateDeleteView, PortfolioTransactionListCreateView, UserPortfolioPerformanceRepartitionAllPortfolio, 
@@ -62,6 +62,18 @@ urlpatterns = [
     path('api/portfolio-performance/ticker-transaction-performances/<int:portfolio_id>/<str:ticker>/', PortfolioTransactionCompareDetailView.as_view()),
     path('api/portfolio-performance/all-ticker-transactions/<int:portfolio_id>/', PortfolioAllTransactionsCompareDetailView.as_view()),
     path("api/portfolio/<int:portfolio_id>/performances/", PortfolioTickerPerformanceView.as_view()),
+
+    path("api/portfolio/<int:portfolio_id>/performances/dividends/month/", PortfolioDividendsMonthView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/dividends/month/by-ticker/", PortfolioDividendsByTickerMonthView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/dividends/year/", PortfolioDividendsYearView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/dividends/year/by-ticker/", PortfolioDividendsByTickerYearView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/dividends/years-list/", PortfolioDividendsYearsListView.as_view()),
+
+    path("api/portfolio/<int:portfolio_id>/performances/investissements/month/", PortfolioDepositsMonthView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/investissements/month/by-ticker/", PortfolioDepositsByNameMonthView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/investissements/year/", PortfolioDepositYearView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/investissements/year/by-ticker/", PortfolioDepositsByPortfolioYearView.as_view()),
+    path("api/portfolio/<int:portfolio_id>/performances/investissements/years-list/", PortfolioDepositYearsListView.as_view()),
 
     # Annexe
     path("api/currencies/", CurrencyListView.as_view()),

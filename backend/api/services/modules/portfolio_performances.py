@@ -1,19 +1,22 @@
 from collections import defaultdict
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from api.models import PortfolioTransaction, PortfolioTicker, PortfolioPerformance, Portfolio, StockPrice
-from api.services.modules.portfolios.my_portfolio import MyPortfolio
+from api.services.modules.portfolios.compute_portfolio_performance import ComputePortfolioPerformance
 from django.contrib.auth import get_user_model
 
-from api.services.modules.portfolios.dollar_cost_averaging import DollarCostAveraging
-from api.services.modules.portfolios.replication import Replication
+from api.services.modules.portfolios.investment_strategy import InvestmentStrategy
 from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
-class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
+class PortfolioPerformances():
     def __init__(self, user, portfolios, start_date: datetime = None, tickers_valuations: dict = {}):
         self.user = user
         self.tickers_valuations = tickers_valuations
         self.performances = self._init_performance_structure()
+
+        # Vérifie et ajuste la date de départ si nécessaire
+        if start_date is not None:
+            start_date = self._adjust_start_date(start_date)
 
         # Normalise la liste de portefeuilles
         self.portfolios = self._normalize_portfolios(portfolios)
@@ -25,6 +28,15 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         # Lance le traitement pour chaque portefeuille
         for portfolio in self.portfolios:
             self._process_portfolio(portfolio, start_date)
+
+    def _adjust_start_date(self, start_date: datetime) -> datetime:
+        """Ajuste la date de départ si elle tombe un week-end."""
+        weekday = start_date.weekday()  # 0 = lundi, 6 = dimanche
+        if weekday == 5:  # samedi
+            return start_date - timedelta(days=1)
+        elif weekday == 6:  # dimanche
+            return start_date + timedelta(days=1)
+        return start_date
 
     def _init_performance_structure(self) -> dict:
         """Initialise la structure des performances du portefeuille."""
@@ -42,6 +54,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
             "portfolio_invested_amounts": pd.DataFrame(dtype=float),
             "portfolio_cash": pd.DataFrame(dtype=float),
             "portfolio_fees": pd.DataFrame(dtype=float),
+            "portfolio_dividends": pd.DataFrame(dtype=float),
             "portfolio_cagr": {},
             "portfolio_dividend_yield": {},
             "portfolio_dividend_earn": {},
@@ -66,6 +79,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         currencies_tickers = PortfolioTicker.get_user_tickers_by_currency(
             user_id=self.user.id, portfolio_id=portfolio.id
         )
+        print(currencies_tickers)
 
         transactions_not_empty = self._process_currencies(
             portfolio, currencies_tickers, performances_tickers_eur, start_date
@@ -116,7 +130,9 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         portfolio_name = Portfolio.get_user_portfolio_name(self.user.id, portfolio.id)
 
         tickers_open_prices_currency = self._prepare_open_prices_currency(tickers, currency, start_date)
-        results = self.my_portfolio(transactions=transactions, tickers_prices=tickers_open_prices_currency, start_date=start_date, end_date=self.end_date)
+        print(tickers_open_prices_currency)
+        compute_portfolio_performance = ComputePortfolioPerformance()
+        results = compute_portfolio_performance.compute_portfolio_performance(transactions=transactions, tickers_prices=tickers_open_prices_currency, start_date=start_date, end_date=self.end_date)
 
         self._save_performance_tickers(self.performances, results, portfolio_name)
 
@@ -141,7 +157,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         # Nom du portefeuille
         portfolio_name = Portfolio.get_user_portfolio_name(self.user.id, portfolio.id)
 
-        save = True
+        save = False
         if start_date is None:
             save = True
 
@@ -152,6 +168,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         # Performances consolidées en EUR
         portfolio_valuation = performances_tickers_eur["tickers_valuation"][portfolio_name].sum(axis=1)
         portfolio_invested_amounts = performances_tickers_eur["tickers_invested_amounts"][portfolio_name].sum(axis=1)
+        portfolio_dividends = performances_tickers_eur["tickers_dividends"][portfolio_name].sum(axis=1)
 
         # Transactions converties en EUR
         transactions_eur = PortfolioTransaction.get_transactions_in_eur(self.user.id, portfolio.id)
@@ -190,6 +207,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         self.performances["portfolio_monthly_percentages"][portfolio_name] = base_portfolio.calculate_monthly_percentage_change(
             portfolio_valuation, transactions_eur
         )
+        self.performances["portfolio_dividends"][portfolio_name] = portfolio_dividends
         self.performances["portfolio_dividend_earn"][portfolio_name] = base_portfolio.calculate_dividend_earn(transactions_eur)
         self.performances["portfolio_dividend_yield"][portfolio_name] = base_portfolio.calculate_dividend_yield(
             transactions_eur, portfolio_valuation
@@ -197,6 +215,10 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         self.performances["portfolio_cash"][portfolio_name] = base_portfolio.compute_cash_evolution(transactions_eur)["cash_cumulative"]
         self.performances["portfolio_fees"][portfolio_name] = base_portfolio.compute_fees_evolution(transactions_eur)["cumulative_fees"]
         self.performances["portfolio_cagr"][portfolio_name] = base_portfolio.calculate_portfolio_cagr(portfolio_valuation, portfolio_invested_amounts)
+        # for metric, data in performances_tickers_eur.items():
+        #     # for df in data.values():
+        #     #     print(df)
+        #     self.__plot_portfolio_performance(data)
 
         # -------------------------
         # Benchmarks
@@ -223,21 +245,80 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
         benchmarks_prices = benchmarks_prices[tickers_portfolio_allocation]
         benchmarks_prices = StockPrice.convert_dataframe_to_currency(benchmarks_prices, "EUR")
 
-        # Argent de départ (argent investi réellement dans le portefeuille)
-        money = base_portfolio.initial_invested_amount(
-            transactions_eur,
-            performances_tickers_eur["tickers_invested_amounts"][portfolio_name]
-        )
-
         # Calcul pour chaque benchmark
+        investment_strategy = InvestmentStrategy()
         for portfolio_allocation in portfolios_allocation:
-            benchmarks_performances = self.dca(portfolio_allocation, benchmarks_prices, money, start_date, self.end_date)
+            benchmarks_performances = investment_strategy.simulate_replication(portfolio_allocation, transactions_eur, benchmarks_prices, start_date, self.end_date)
+            # self.plot_portfolio_data(benchmarks_performances)
             self._save_performance_benchmarks(self.performances, benchmarks_performances, portfolio_allocation[-1])
 
         # Si pas de start_date (cas "réel"), on enregistre en base
         if save:
             self._save_portfolio_performance(self.user, portfolio, self.performances)
 
+    @staticmethod
+    def plot_portfolio_data(data_dict):
+        """
+        Génère un graphique Plotly interactif pour chaque DataFrame, Series ou dict
+        contenu dans le dictionnaire passé en paramètre.
+        """
+        import plotly.express as px
+        import plotly.graph_objects as go
+        
+        for name, data in data_dict.items():
+            title = name.replace('_', ' ').title()
+            
+            # --- Cas DataFrame ---
+            if isinstance(data, pd.DataFrame):
+                # On trace toutes les colonnes
+                fig = px.line(
+                    data,
+                    x=data.index,
+                    y=data.columns,
+                    title=title,
+                    labels={'x': 'Date', 'value': 'Valeur', 'variable': 'Colonne'}
+                )
+                fig.update_layout(hovermode='x unified')
+                fig.show()
+            
+            # --- Cas Series ---
+            elif isinstance(data, pd.Series):
+                fig = px.line(
+                    x=data.index,
+                    y=data.values,
+                    title=title,
+                    labels={'x': 'Date', 'y': name}
+                )
+                fig.update_layout(hovermode='x unified')
+                fig.show()
+            
+            # --- Cas dict (comme portfolio_cagr) ---
+            elif isinstance(data, dict):
+                df = pd.DataFrame(list(data.items()), columns=['Période', 'Valeur'])
+                fig = px.bar(
+                    df,
+                    x='Période',
+                    y='Valeur',
+                    title=title,
+                    text='Valeur'
+                )
+                fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+                fig.update_layout(yaxis_title='Valeur (%)')
+                fig.show()
+            
+            # --- Autres types (np.float64, etc.) ---
+            else:
+                try:
+                    # Si c’est un nombre, on affiche une gauge simple
+                    fig = go.Figure(go.Indicator(
+                        mode="gauge+number",
+                        value=float(data),
+                        title={'text': title},
+                        gauge={'axis': {'range': [None, float(data) * 1.5]}}
+                    ))
+                    fig.show()
+                except Exception:
+                    print(f"Type non supporté pour '{name}': {type(data)}")
 
 
     def _set_transaction_with_date(self, transactions_all: pd.DataFrame, start_date: datetime, tickers_valuations: dict, tickers_prices: pd.DataFrame) -> pd.DataFrame:
@@ -317,6 +398,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
             "tickers_valuation",
             "tickers_dividends",
             "tickers_pru",
+            "tickers_dividends"
         ]:
             if portfolio_name in all_performance[key]:
                 # concaténer les nouvelles données avec l'existant
@@ -460,6 +542,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
                 "portfolio_invested_amounts": self._convert_df_to_json(performances["portfolio_invested_amounts"]),
                 "portfolio_cash": self._convert_df_to_json(performances["portfolio_cash"]),
                 "portfolio_fees": self._convert_df_to_json(performances["portfolio_fees"]),
+                "portfolio_dividends": self._convert_df_to_json(performances["portfolio_dividends"]),
                 "portfolio_cagr": performances["portfolio_cagr"],
                 "portfolio_dividend_yield": performances["portfolio_dividend_yield"],
                 "portfolio_dividend_earn": performances["portfolio_dividend_earn"],
@@ -496,6 +579,7 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
                 "portfolio_invested_amounts": {},
                 "portfolio_cash": {},
                 "portfolio_fees": {},
+                "portfolio_dividends": {},
                 "portfolio_cagr": {},
                 "portfolio_dividend_yield": {},
                 "portfolio_dividend_earn": {},
@@ -504,3 +588,62 @@ class PortfolioPerformances(MyPortfolio, DollarCostAveraging, Replication):
 
     def get_twr(self):
         return {"portfolio_twr": self._convert_df_to_json(self.performances["portfolio_twr"])}
+
+    
+    def __plot_portfolio_performance(self, performance_data: dict):
+        """
+        Génère des graphiques linéaires pour chaque catégorie de performance.
+        Vérifie la validité des données avant de tracer les courbes.
+
+        Args:
+            performance_data (dict): Dictionnaire contenant les noms de catégories (clés) 
+                                    et les DataFrames (valeurs).
+        """
+        for category_name, df in performance_data.items():
+            # --- [ Validation des données ] ---
+            # Vérification si la valeur est un DataFrame, sinon on passe au suivant
+            if not isinstance(df, pd.DataFrame):
+                continue
+            
+            # Vérification si le DataFrame est vide
+            if df.empty:
+                print(f"Le DataFrame pour '{category_name}' est vide. Passage au suivant.")
+                continue
+
+            # Appel de la méthode privée de rendu
+            self.__render_line_chart(df, category_name)
+
+    def __render_line_chart(self, df: pd.DataFrame, title: str):
+        """
+        Crée et affiche un graphique Plotly avec une courbe par colonne (ticker).
+
+        Args:
+            df (pd.DataFrame): Données à tracer (lignes = dates, colonnes = tickers).
+            title (str): Titre du graphique (clé du dictionnaire).
+        """
+        import plotly.graph_objects as go
+        fig = go.Figure()
+
+        # --- [ Ajout des traces ] ---
+        # On parcourt chaque colonne (chaque ticker) du DataFrame
+        for ticker in df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df.index, 
+                    y=df[ticker],
+                    mode='lines',
+                    name=ticker
+                )
+            )
+
+        # --- [ Configuration du Layout ] ---
+        fig.update_layout(
+            title=title,
+            xaxis_title="Date",
+            yaxis_title="Valeur",
+            template="plotly_white",
+            legend_title="Tickers"
+        )
+
+        # Affiche le graphique dans le navigateur ou le notebook
+        fig.show()

@@ -3,9 +3,7 @@ import os
 import sys
 import django
 import yfinance as yf
-import requests
 import pandas as pd
-from io import StringIO
 
 # Ajouter le chemin au répertoire src pour accéder correctement aux modules
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -32,7 +30,7 @@ def update_stock_prices():
         return
 
     # Date de fin = hier (pas aujourd'hui car données incomplètes)
-    end_date = datetime.today().date()
+    end_date = (datetime.today() - timedelta(days=1)).date()
 
     # Date de début = 5 jours avant la dernière date connue (ou 1800 sinon)
     last_stock_date = StockPrice.objects.aggregate(last_date=models.Max("date"))["last_date"]
@@ -266,5 +264,5 @@ def update_splits_for_all_companies():
 # tickers = ["SPY", "NQ=F", "URTH", "^FCHI"]
 # import_stock_price_for_ticker(tickers)
 
-
-update_stock_prices()
+if __name__ == "__main__":
+    update_stock_prices()

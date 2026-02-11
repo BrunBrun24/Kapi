@@ -13,13 +13,15 @@ django.setup()
 from api.models import Portfolio
 from api.services.modules.portfolio_performances import PortfolioPerformances
 from api.services.modules.compare_transactions_sp500 import ComparePortfolioSP500
-
+from api.add_db.add_data_tickers import update_stock_prices
 
 users = [u for u in Portfolio.objects.values()]
 print(users)
 
 
 if __name__ == "__main__":
+    update_stock_prices()
+
     # Récupérer les utilisateurs distincts qui ont un portefeuille
     user_ids = Portfolio.objects.values_list("user_id", flat=True).distinct()
     User = get_user_model()

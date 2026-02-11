@@ -2,14 +2,14 @@ from decimal import Decimal
 import pandas as pd
 from datetime import datetime
 from api.models import PortfolioTicker, PortfolioTransaction, StockPrice, TickerPerformanceCompareSP500, TransactionCompareSP500
-from api.services.modules.portfolios.my_portfolio import MyPortfolio
+from api.services.modules.portfolios.compute_portfolio_performance import ComputePortfolioPerformance
 
 from api.services.modules.portfolios.base_portfolio import BasePortfolio
 
-class ComparePortfolioSP500(MyPortfolio):
+class ComparePortfolioSP500():
     def __init__(self, user, portfolios):
         self.user = user
-        self.portfolio_engine = MyPortfolio()
+        self.portfolio_engine = ComputePortfolioPerformance()
         self.ticker_sp500 = "SPY"
 
         self.compare_transactions_sp500 = pd.DataFrame(columns=self._get_transaction_columns())
@@ -68,7 +68,7 @@ class ComparePortfolioSP500(MyPortfolio):
 
         return tr
 
-    def _transaction_per_ticker_sp500(self, transactions: pd.DataFrame, start_date: datetime) -> pd.DataFrame:
+    def _transaction_per_ticker_sp500(self, transactions: pd.DataFrame) -> pd.DataFrame:
         """
         Construit un DataFrame de transactions fictives pour le S&P500
         à partir des transactions réelles d’un ticker.
@@ -83,7 +83,7 @@ class ComparePortfolioSP500(MyPortfolio):
         transactions_sp500 = pd.DataFrame()
 
         for idx, row in transactions.iterrows():
-            stock_price = StockPrice.get_price_on_date(self.ticker_sp500, start_date, row["currency"])
+            stock_price = StockPrice.get_price_on_date(self.ticker_sp500, idx, row["currency"])
             quantity = row["amount"] / stock_price
 
             transactions_sp500 = pd.concat([
@@ -109,7 +109,7 @@ class ComparePortfolioSP500(MyPortfolio):
 
         ticker_prices = tickers_prices[ticker].loc[start_date:end_date].to_frame(name=ticker)
         ticker_prices_convert = StockPrice.convert_dataframe_to_currency(ticker_prices, transactions["currency"].iloc[0])
-        performances_ticker = self.portfolio_engine.my_portfolio(transactions, ticker_prices_convert, start_date, end_date)
+        performances_ticker = self.portfolio_engine.compute_portfolio_performance(transactions, ticker_prices_convert, start_date, end_date)
 
         base_portfolio = BasePortfolio(start_date, end_date)
         performances_ticker["portfolio_dividend_earn"] = base_portfolio.calculate_dividends_evolution(
@@ -121,12 +121,12 @@ class ComparePortfolioSP500(MyPortfolio):
         ) * 100
 
         if aggregated:
-            tr_sp500 = self._transaction_per_ticker_sp500(transactions, start_date)
+            tr_sp500 = self._transaction_per_ticker_sp500(transactions)
         else:
             tr_sp500 = self._transaction_sp500(transactions, start_date)
 
         sp500_prices_convert = StockPrice.convert_dataframe_to_currency(sp500_prices.loc[start_date:end_date], transactions["currency"].iloc[0])
-        performances_sp500 = self.portfolio_engine.my_portfolio(tr_sp500, sp500_prices_convert, start_date, end_date)
+        performances_sp500 = self.portfolio_engine.compute_portfolio_performance(tr_sp500, sp500_prices_convert, start_date, end_date)
 
         self._save_transaction_to_db(portfolio, transactions, performances_ticker, performances_sp500, ticker, end_date, aggregated)
 

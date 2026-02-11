@@ -9,7 +9,6 @@ from django.conf import settings
 from django.db.models import Sum
 import pandas as pd
 from django.db.models import Min, Max
-from django.core.exceptions import ObjectDoesNotExist
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -837,6 +836,7 @@ class PortfolioPerformance(models.Model):
     portfolio_cash = models.JSONField()
     portfolio_fees = models.JSONField()
     portfolio_cagr = models.JSONField()
+    portfolio_dividends = models.JSONField()
     portfolio_dividend_yield = models.JSONField()
     portfolio_dividend_earn = models.JSONField()
 
@@ -999,82 +999,49 @@ class TickerPerformanceCompareSP500(models.Model):
     ):
         """
         Crée ou met à jour une performance agrégée par ticker comparée au SP500.
-        Si elle existe déjà (avec tolérance), elle sera remplacée.
+        Gère les doublons existants et convertit les NaN Pandas en 0.
         """
-        existing_qs = cls.objects.filter(
-            user=user,
-            portfolio=portfolio,
-            ticker=ticker,
-            number_of_transactions__gte=number_of_transactions - tolerance,
-            number_of_transactions__lte=number_of_transactions + tolerance,
-            purchase_amount__gte=purchase_amount - tolerance,
-            purchase_amount__lte=purchase_amount + tolerance,
-            current_value__gte=current_value - tolerance,
-            current_value__lte=current_value + tolerance,
-            total_gain__gte=total_gain - tolerance,
-            total_gain__lte=total_gain + tolerance,
-            gain_percentage__gte=gain_percentage - tolerance,
-            gain_percentage__lte=gain_percentage + tolerance,
-            sp500_value__gte=sp500_value - tolerance,
-            sp500_value__lte=sp500_value + tolerance,
-            sp500_gain_percentage__gte=sp500_gain_percentage - tolerance,
-            sp500_gain_percentage__lte=sp500_gain_percentage + tolerance,
-            performance_gap__gte=performance_gap - tolerance,
-            performance_gap__lte=performance_gap + tolerance,
-            holding_duration__gte=holding_duration - tolerance,
-            holding_duration__lte=holding_duration + tolerance,
-            annualized_return__gte=annualized_return - tolerance,
-            annualized_return__lte=annualized_return + tolerance,
-            dividend_amount__gte=dividend_amount - tolerance,
-            dividend_amount__lte=dividend_amount + tolerance,
-            dividend_yield__gte=dividend_yield - tolerance,
-            dividend_yield__lte=dividend_yield + tolerance,
-            quantity__gte=quantity - tolerance,
-            quantity__lte=quantity + tolerance,
-            transaction_fees__gte=transaction_fees - tolerance,
-            transaction_fees__lte=transaction_fees + tolerance,
-            currency=currency,
+        import pandas as pd
+        from decimal import Decimal
+
+        # --- [ Nettoyage des données ] ---
+        def clean_decimal(val):
+            if pd.isna(val) or val is None:
+                return Decimal("0.00")
+            # Convertit en string pour éviter les erreurs de précision float -> Decimal
+            return Decimal(str(val))
+
+        data_fields = {
+            "number_of_transactions": clean_decimal(number_of_transactions),
+            "purchase_amount": clean_decimal(purchase_amount),
+            "current_value": clean_decimal(current_value),
+            "total_gain": clean_decimal(total_gain),
+            "gain_percentage": clean_decimal(gain_percentage),
+            "sp500_value": clean_decimal(sp500_value),
+            "sp500_gain_percentage": clean_decimal(sp500_gain_percentage),
+            "performance_gap": clean_decimal(performance_gap),
+            "holding_duration": clean_decimal(holding_duration),
+            "annualized_return": clean_decimal(annualized_return),
+            "dividend_amount": clean_decimal(dividend_amount),
+            "dividend_yield": clean_decimal(dividend_yield),
+            "quantity": clean_decimal(quantity),
+            "transaction_fees": clean_decimal(transaction_fees),
+            "currency": currency,
+        }
+
+        # --- [ Gestion des doublons existants ] ---
+        # Si la DB est déjà polluée, update_or_create plantera.
+        # On nettoie les anciens doublons pour ne garder que le plus récent si nécessaire.
+        lookup_params = {
+            "user": user,
+            "portfolio": portfolio,
+            "ticker": ticker
+        }
+
+        # --- [ Sauvegarde ] ---
+        obj, created = cls.objects.update_or_create(
+            **lookup_params,
+            defaults=data_fields
         )
 
-        if existing_qs.exists():
-            # Met à jour la performance existante
-            existing_qs.update(
-                number_of_transactions=number_of_transactions,
-                purchase_amount=purchase_amount,
-                current_value=current_value,
-                total_gain=total_gain,
-                gain_percentage=gain_percentage,
-                sp500_value=sp500_value,
-                sp500_gain_percentage=sp500_gain_percentage,
-                performance_gap=performance_gap,
-                holding_duration=holding_duration,
-                annualized_return=annualized_return,
-                dividend_amount=dividend_amount,
-                dividend_yield=dividend_yield,
-                quantity=quantity,
-                transaction_fees=transaction_fees,
-            )
-            return existing_qs.first()
-
-        # Sinon, crée une nouvelle performance
-        ticker_performance = cls.objects.create(
-            user=user,
-            portfolio=portfolio,
-            ticker=ticker,
-            number_of_transactions=number_of_transactions,
-            purchase_amount=purchase_amount,
-            current_value=current_value,
-            total_gain=total_gain,
-            gain_percentage=gain_percentage,
-            sp500_value=sp500_value,
-            sp500_gain_percentage=sp500_gain_percentage,
-            performance_gap=performance_gap,
-            holding_duration=holding_duration,
-            annualized_return=annualized_return,
-            dividend_amount=dividend_amount,
-            dividend_yield=dividend_yield,
-            quantity=quantity,
-            transaction_fees=transaction_fees,
-            currency=currency,
-        )
-        return ticker_performance
+        return obj

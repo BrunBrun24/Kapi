@@ -3,9 +3,9 @@ from .base_portfolio import BasePortfolio
 
 import pandas as pd
 
-class MyPortfolio():
+class ComputePortfolioPerformance():
 
-    def my_portfolio(self, transactions: pd.DataFrame, tickers_prices: pd.DataFrame, start_date: datetime, end_date: datetime):
+    def compute_portfolio_performance(self, transactions: pd.DataFrame, tickers_prices: pd.DataFrame, start_date: datetime, end_date: datetime):
         base_portfolio = BasePortfolio(start_date, end_date)
 
         tickers_invested_amounts = base_portfolio.tickers_investment_amount_evolution(transactions)

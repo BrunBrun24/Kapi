@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import django
@@ -49,8 +50,13 @@ def create_companies(tickers):
         founded_date = info.get('yearBorn')
         stock_exchange = info.get('exchange')
 
+        # Vérifier si le nom est présent
+        if not name:
+            print(f"⚠️ Nom manquant pour {ticker}, entreprise ignorée.")
+            continue
+
         # Vérifier si toutes les données sont vides
-        if all(value == None for value in [name, isin, sector, country, website, description, founded_date, stock_exchange]):
+        if all(value is None for value in [name, isin, sector, country, website, description, founded_date, stock_exchange]):
             print(f"⚠️ Données insuffisantes pour {ticker}, entreprise ignorée.")
             continue  # Ne pas ajouter cette entreprise
 
@@ -92,6 +98,13 @@ def update_currencies():
 # tickers = get_sp500_tickers() + get_cac40_tickers()
 # create_companies(tickers)
 tickers = ["NVO", "SW.PA", "PLX.PA", "CSSPX.MI", "PHYMF", "EURUSD=X", "SPY", "NQ=F", "URTH", "^FCHI"]
+
+
+# TICKERS_FILE = "tickers.json"
+# with open(TICKERS_FILE, "r", encoding="utf-8") as f:
+#     tickers_data = json.load(f)
+# tickers = [item["ticker"] for item in tickers_data]
+
 create_companies(tickers)
 print("Terminé ✅")
 
